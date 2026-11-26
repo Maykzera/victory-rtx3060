@@ -12,7 +12,8 @@
 # -Adapter         on a PC with more than one card, the one to use: part of its name (-Adapter 5060) or its index
 #                  (-Adapter '#1'). Default: Windows' default card (the one the main display is on).
 # -Build           target\diag (the default, the build all measurements are of) or target\release
-#                  (the release build ignores the ray-tracing skip list: VICTORY_SKIP_PIPELINES is a diagnostics switch)
+#                  or target\perf (scripts\build-perf.ps1: no diagnostics, fat LTO, built for this CPU). The skip list
+#                  and VICTORY_KEYS work in every build since 26/11.
 # -More            other settings: -More @{VICTORY_PANEL='1'}
 # -Capture         record one frame for `victory replay` (docs/replay.md) into %LOCALAPPDATA%\victory\captures:
 #                  when the picture shows what is wrong, run scripts\capture-now.ps1 in another window (about 9 GB,
@@ -34,7 +35,7 @@ param(
     [switch]$RayTracing,
     [ValidateSet('2160', '1440', '1080', '720', '540', '480', '432')][string]$Resolution,
     [string]$Adapter,
-    [ValidateSet('diag', 'release')][string]$Build = 'diag',
+    [ValidateSet('diag', 'release', 'perf')][string]$Build = 'diag',
     [hashtable]$More = @{}
 )
 $settings = @{

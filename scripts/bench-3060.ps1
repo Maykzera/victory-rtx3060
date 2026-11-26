@@ -7,7 +7,7 @@
 # -Set 2: the default, the default at render scale 0.4 (432p), the default with up to 16 submissions joined
 # -Set 3: the default (16 joined, 540p), the default at 432p, 432p with up to 24 submissions joined
 # -Set 4: the default, the refresh filter on several threads (VICTORY_FILTER_WIDE, since removed: no gain), that at 432p
-# -Set 6: the default, 5 and 7 threads for the refreshes (VICTORY_WIDE_THREADS; 3 by default here)
+# -Set 6: the diag build, the perf build, the perf build with 5 refresh threads (VICTORY_WIDE_THREADS)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
@@ -54,9 +54,11 @@ $runs = switch ($Set) {
     6 {
         # Judge by the preparing thread's ms a frame and the refreshes' ms (the frame line), not fps alone:
         # the same setup gave 13.8, 14.1 and 15.2 fps in three runs.
-        @{ Name = 'default (3 refresh threads)'; Args = @{}; More = @{} },
-        @{ Name = '5 refresh threads'; Args = @{}; More = @{ VICTORY_WIDE_THREADS = '5' } },
-        @{ Name = '7 refresh threads'; Args = @{}; More = @{ VICTORY_WIDE_THREADS = '7' } }
+        # Also: the skip list is a set now (it was 1,034 hashes compared one by one for every draw), and the
+        # perf build (no diagnostics, fat LTO, -C target-cpu=znver3) runs with the skip list.
+        @{ Name = 'diag build'; Args = @{}; More = @{} },
+        @{ Name = 'perf build'; Args = @{ Build = 'perf' }; More = @{} },
+        @{ Name = 'perf build, 5 refresh threads'; Args = @{ Build = 'perf' }; More = @{ VICTORY_WIDE_THREADS = '5' } }
     }
 }
 $i = 0
