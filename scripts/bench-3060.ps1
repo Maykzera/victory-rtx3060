@@ -6,12 +6,13 @@
 # -Set 1: -Classic, -Classic -SixCores, the default (the A/B of 26/11)
 # -Set 2: the default, the default at render scale 0.4 (432p), the default with up to 16 submissions joined
 # -Set 3: the default (16 joined, 540p), the default at 432p, 432p with up to 24 submissions joined
-# -Set 4: the default, the default with the refresh filter on several threads (VICTORY_FILTER_WIDE), that at 432p
+# -Set 4: the default, the refresh filter on several threads (VICTORY_FILTER_WIDE, since removed: no gain), that at 432p
+# -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4)][int]$Set = 4,
+    [ValidateSet(1, 2, 3, 4, 5)][int]$Set = 5,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -42,6 +43,12 @@ $runs = switch ($Set) {
         @{ Name = 'default'; Args = @{}; More = @{} },
         @{ Name = 'default + VICTORY_FILTER_WIDE'; Args = @{}; More = @{ VICTORY_FILTER_WIDE = '1' } },
         @{ Name = '432p + VICTORY_FILTER_WIDE'; Args = @{ Resolution = '432' }; More = @{ VICTORY_FILTER_WIDE = '1' } }
+    }
+    5 {
+        # Timers inside the flushes of over 256 refreshes (the frame line): where the 11 ms of refreshes go.
+        @{ Name = 'default'; Args = @{}; More = @{} },
+        @{ Name = 'default at 432p'; Args = @{ Resolution = '432' }; More = @{} },
+        @{ Name = 'default again'; Args = @{}; More = @{} }
     }
 }
 $i = 0

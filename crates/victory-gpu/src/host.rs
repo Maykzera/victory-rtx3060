@@ -7397,46 +7397,22 @@ impl std::hash::Hasher for AddressHash {
 static SPLIT: [std::sync::atomic::AtomicU64; 16] = [const { std::sync::atomic::AtomicU64::new(0) }; 16];
 
 /// Since the last frame-rate line: flushes of refreshes, their refreshes,
-/// those known to copy nothing, those done on several threads, and the
+/// those known to copy nothing, those done on several threads, the
 /// nanoseconds the submitting thread spent telling which copy nothing
-/// ([`retain_new`]).
+/// ([`retain_new`]); then of the flushes of more than 256 copies, told on
+/// the kept threads: their nanoseconds start to end, and the threads'
+/// nanoseconds telling which copy nothing and updating the others.
 #[cfg(feature = "diagnostics")]
-static FLUSHES: [std::sync::atomic::AtomicU64; 5] = [const { std::sync::atomic::AtomicU64::new(0) }; 5];
-
-/// `VICTORY_FILTER_WIDE=1`: the refreshes known to copy nothing are told on
-/// the kept threads, not one after another on the submitting thread. Each
-/// check takes three locks of its copy and a look at the write watch's bits;
-/// a flush asks it of up to 256 copies before anything is asked or woken, and
-/// a frame has about 40 flushes and 7,500 refreshes, 6,400 of which copy
-/// nothing (RTX 3060 + Ryzen 5 5600X, 26/11: 11 ms of refreshes a frame on the
-/// submitting thread, the wall). Same checks, same order of what follows.
-fn filter_wide() -> bool {
-    static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("VICTORY_FILTER_WIDE").is_some_and(|v| v != "0"))
-}
+static FLUSHES: [std::sync::atomic::AtomicU64; 8] = [const { std::sync::atomic::AtomicU64::new(0) }; 8];
 
 /// Drops from `spans` the refreshes [`crate::shadow::Shadow::nothing_new`]
-/// says copy nothing ([`filter_wide`]: on several threads); how many went.
+/// says copy nothing; how many went. (Measured on the RTX 3060, 26/11: 0.5 ms
+/// a frame; telling them on the kept threads instead gained nothing.)
 fn retain_new(spans: &mut Vec<(std::sync::Arc<crate::shadow::Shadow>, usize, usize)>) -> usize {
     #[cfg(feature = "diagnostics")]
     let began = std::time::Instant::now();
     let all = spans.len();
-    if filter_wide() && all >= 32 {
-        let shared = std::sync::Arc::new(std::mem::take(spans));
-        let keep: std::sync::Arc<Vec<std::sync::atomic::AtomicBool>> =
-            std::sync::Arc::new((0..all).map(|_| std::sync::atomic::AtomicBool::new(false)).collect());
-        {
-            let (shared, keep) = (shared.clone(), keep.clone());
-            crate::shadow::wide_each(all, move |i| {
-                let (shadow, from, to) = &shared[i];
-                keep[i].store(!shadow.nothing_new(*from, *to - *from), Ordering::Relaxed);
-            });
-        }
-        let taken = std::sync::Arc::try_unwrap(shared).unwrap_or_else(|s| (*s).clone());
-        *spans = taken.into_iter().zip(keep.iter()).filter(|(_, k)| k.load(Ordering::Relaxed)).map(|(r, _)| r).collect();
-    } else {
-        spans.retain(|(shadow, from, to)| !shadow.nothing_new(*from, *to - *from));
-    }
+    spans.retain(|(shadow, from, to)| !shadow.nothing_new(*from, *to - *from));
     #[cfg(feature = "diagnostics")]
     FLUSHES[4].fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
     all - spans.len()
@@ -7475,7 +7451,7 @@ fn split_line(frames: f64) {
     let s: Vec<f64> = crate::shadow::send_stats().iter().map(|&n| n as f64 / frames).collect();
     tracing::info!(
         "preparing per frame, the submitting thread: {:.1} ms asking the write watch ({:.1} of them finding what to ask), {:.1} putting the title's bytes under flights' \
-         writes, {:.1} in the lists' steps (refreshes {:.1} in {:.0} flushes of {:.0}, {:.0} of them known to copy nothing ({:.1} ms telling which, VICTORY_FILTER_WIDE is {}), {:.0} on \
+         writes, {:.1} in the lists' steps (refreshes {:.1} in {:.0} flushes of {:.0}, {:.0} of them known to copy nothing ({:.1} ms telling which; flushes of over 256 on the kept threads: {:.1} ms, the threads {:.1} ms telling and {:.1} updating), {:.0} on \
          several threads, {:.1} one at a time in {:.0} before shader writes; copies and fills {:.1}, the refreshes before copies among them), {:.1} snapshots, {:.1} for copies in the \
          card's memory, {:.1} sending the lists (VICTORY_LIGHT_REFRESH is {}); ahead of these {:.1} waiting for the submission lock, {:.1} \
          planning steps done on the card, {:.1} waiting for flights, {:.1} the heaps' records and what is swept; at the end {:.1} waiting \
@@ -7489,7 +7465,9 @@ fn split_line(frames: f64) {
         f[1],
         f[2],
         f[4] / 1e6,
-        if filter_wide() { "on" } else { "off" },
+        f[5] / 1e6,
+        f[6] / 1e6,
+        f[7] / 1e6,
         f[3],
         ms[9],
         ms[10] * 1e6,
@@ -7984,13 +7962,32 @@ impl Batch {
                 return;
             };
             let (shadow, from, to) = &spans[i];
+            #[cfg(feature = "diagnostics")]
+            let t = std::time::Instant::now();
             if many && shadow.nothing_new(*from, *to - *from) {
                 #[cfg(feature = "diagnostics")]
-                FLUSHES[2].fetch_add(1, Ordering::Relaxed);
+                {
+                    FLUSHES[2].fetch_add(1, Ordering::Relaxed);
+                    FLUSHES[6].fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                }
                 return;
             }
+            #[cfg(feature = "diagnostics")]
+            let u = std::time::Instant::now();
+            #[cfg(feature = "diagnostics")]
+            if many {
+                FLUSHES[6].fetch_add((u - t).as_nanos() as u64, Ordering::Relaxed);
+            }
             Self::update(shadow, *from, *to);
+            #[cfg(feature = "diagnostics")]
+            if many {
+                FLUSHES[7].fetch_add(u.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            }
         });
+        #[cfg(feature = "diagnostics")]
+        if many {
+            FLUSHES[5].fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
         if ahead {
             crate::watch::ask_ahead_done();
         }
@@ -8152,15 +8149,35 @@ impl Batch {
             if light {
                 // A number to a free thread, not a job to each copy.
                 let refreshes = std::mem::take(&mut self.refreshes);
+                let many = refreshes.len() > FEW;
                 crate::shadow::wide_each(refreshes.len(), move |i| {
                     let (shadow, from, to) = &refreshes[i];
-                    if refreshes.len() > FEW && shadow.nothing_new(*from, *to - *from) {
+                    #[cfg(feature = "diagnostics")]
+                    let t = std::time::Instant::now();
+                    if many && shadow.nothing_new(*from, *to - *from) {
                         #[cfg(feature = "diagnostics")]
-                        FLUSHES[2].fetch_add(1, Ordering::Relaxed);
+                        {
+                            FLUSHES[2].fetch_add(1, Ordering::Relaxed);
+                            FLUSHES[6].fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                        }
                         return;
                     }
+                    #[cfg(feature = "diagnostics")]
+                    let u = std::time::Instant::now();
+                    #[cfg(feature = "diagnostics")]
+                    if many {
+                        FLUSHES[6].fetch_add((u - t).as_nanos() as u64, Ordering::Relaxed);
+                    }
                     Self::update(shadow, *from, *to);
+                    #[cfg(feature = "diagnostics")]
+                    if many {
+                        FLUSHES[7].fetch_add(u.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                    }
                 });
+                #[cfg(feature = "diagnostics")]
+                if many {
+                    FLUSHES[5].fetch_add(started.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                }
             } else {
                 let jobs: Vec<Box<dyn FnOnce() + Send>> = self
                     .refreshes
