@@ -5,7 +5,8 @@
 # -SeriesX         the Series X profile instead (slower: about 7 fps at half scale)
 # -Quality         fewer stretched/jumping bodies and less rainbow skin, at about 13 fps instead of about 20
 # -RayTracing      keep the title's ray-tracing passes (off by default: see below)
-# -Resolution      the height the game renders at before the title's own upscaler: 2160, 1440, 1080, 720, 540 or 480.
+# -Resolution      the height the game renders at before the title's own upscaler: 2160, 1440, 1080, 720, 540, 480 or 432.
+#                  432 (render scale 0.4) on the RTX 3060: 13.6 -> 15.0 fps on average, a softer picture.
 #                  Series S outputs 1080p (so up to 1080 there), Series X 2160p. Default: half the output (540 on S,
 #                  1080 on X). The play-S-*.ps1 and play-X-*.ps1 scripts next to this one call it with each.
 # -Adapter         on a PC with more than one card, the one to use: part of its name (-Adapter 5060) or its index
@@ -31,7 +32,7 @@ param(
     [switch]$SeriesX,
     [switch]$Quality,
     [switch]$RayTracing,
-    [ValidateSet('2160', '1440', '1080', '720', '540', '480')][string]$Resolution,
+    [ValidateSet('2160', '1440', '1080', '720', '540', '480', '432')][string]$Resolution,
     [string]$Adapter,
     [ValidateSet('diag', 'release')][string]$Build = 'diag',
     [hashtable]$More = @{}
@@ -109,6 +110,11 @@ if (($small -or $SixCores) -and -not $Classic) {
     # CPU they share 6 cores with the title's own threads and the preparing thread: fewer of each.
     $settings.VICTORY_THIN_THREADS = '5'; $settings.VICTORY_UNDER_THREADS = '3'
     $settings.VICTORY_VIEW_THREADS = '3'; $settings.VICTORY_PIPELINE_WORKERS = '4'
+}
+if (-not $Classic) {
+    # Up to 16 submissions (96 lists) prepared together instead of 8 (48): per-submission work off the preparing
+    # thread. RTX 3060, 26/11, 6-minute runs: 13.6 -> 14.2 fps on average, 1% low 7.8 -> 9.2 fps, P99 121 -> 103 ms.
+    $settings.VICTORY_JOIN_PARTS = '16'; $settings.VICTORY_JOIN_LISTS = '96'
 }
 if (-not $Classic -or $SmallOnCard) {
     # Every title buffer from 64 KiB up gets its copy and compare on the card, not only those of 1 MiB and more
