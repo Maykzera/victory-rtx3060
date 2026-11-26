@@ -20,7 +20,7 @@ Com 32 GB de RAM, o 7900XTX já está fora do que o próprio autor recomenda.
 
 ## O que a RTX 3060 aceita e recusa (medido)
 
-`victory-gfxcheck` (programa próprio, `E:\GTA6.Xbox.v1.0.2.1\victory-gfxcheck`): **12 de 12 testes
+`victory-gfxcheck` (programa próprio, `<pasta-do-jogo>\victory-gfxcheck`): **12 de 12 testes
 passaram.** Fatos que importam para a camada:
 
 | Fato | Valor medido | Consequência no VIctory |
@@ -106,7 +106,7 @@ O que é específico de NVIDIA já é decidido pelo código a partir do que a pl
 heap de 1.000.000, views de constantes de 64 KiB, dispatches indiretos de até 65.535 grupos); o
 perfil AMD (`VIctory-7900XTX\scripts\play.ps1`) não foi alterado.
 
-### 3. Testes gráficos independentes — `E:\GTA6.Xbox.v1.0.2.1\victory-gfxcheck` (novo)
+### 3. Testes gráficos independentes — `<pasta-do-jogo>\victory-gfxcheck` (novo)
 
 Crate próprio (fora das duas árvores do VIctory). Testes: janela; device, adaptador e recursos;
 cor sólida pela swap chain com leitura de volta; triângulo; upload e amostragem de textura;
@@ -140,7 +140,7 @@ Execução 1 (cache de shaders do 7900XTX, driver frio):
 
 Correções:
 
-- `victory translate E:\GTA6.Xbox.v1.0.2.1\shaders.rpf --warm all --jobs 12`: 25.636 shaders
+- `victory translate <pasta-do-jogo>\shaders.rpf --warm all --jobs 12`: 25.636 shaders
   traduzidos para o cache deste fork em 4m51s, 253 não traduzem (geometria e sombras por ray
   tracing, já conhecidos). Na execução 2 o cache passou a acertar (hits=229 contra 0).
 - `VICTORY_PIPELINE_WORKERS` (novo neste fork, `pipeline/make.rs`, com teste): o número de workers
@@ -287,17 +287,17 @@ VIctory-7900XTX, que não tem essa exigência, passa. Não tem relação com a t
 ## Comandos
 
 ```powershell
-cd E:\GTA6.Xbox.v1.0.2.1\victory-gfxcheck
+cd <pasta-do-jogo>\victory-gfxcheck
 .\target\release\victory-gfxcheck.exe
 ```
 
 ```powershell
-cd E:\GTA6.Xbox.v1.0.2.1\victory-fork-main\victory-fork-main
+cd <pasta-do-victory>
 cargo build --locked --profile diag -p victory --features diagnostics
 ```
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\play-nvidia.ps1 -Exe E:\GTA6.Xbox.v1.0.2.1\game_scarlett_master.exe
+powershell -ExecutionPolicy Bypass -File scripts\play-nvidia.ps1 -Exe <pasta-do-jogo>\game_scarlett_master.exe
 ```
 
 ## Frame pacing (1% low, P95/P99, travadas)

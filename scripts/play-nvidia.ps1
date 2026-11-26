@@ -112,6 +112,16 @@ if (-not $Plain) {
             # "our send-and-hash lists" were 23-29 ms of the card's frame with one).
             # Here those lists were 28-46 ms while the card was the limit.
             VICTORY_CARD_HASH_WIDE = '1'
+            # Upstream's newest, measured there on an RTX 4070 (README, 2026-11-26):
+            # the texture pass on a thread of its own (pull request #1007; world frames
+            # 6.2-6.7 -> 8.65-9.5 at the boat mission),
+            VICTORY_HEAP_WORKER = '1'
+            # refreshes spread over threads (8.7-9.4 ms less preparing a frame),
+            VICTORY_PARALLEL_REFRESH = '1'
+            # flights given more room before they are settled (-11.5 ms preparing),
+            VICTORY_SETTLE_ROOM = '1'
+            # and a cache of buffer host-copy lookups (pull request #1237; ~14 ms a frame).
+            VICTORY_LOOKUP_CACHE = '1'
         }
         foreach ($k in $fast.Keys) { $settings[$k] = $fast[$k] }
     }
