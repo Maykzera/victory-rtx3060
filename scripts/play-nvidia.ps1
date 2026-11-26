@@ -16,11 +16,15 @@
 # -Capture         record one frame for `victory replay` (docs/replay.md) into %LOCALAPPDATA%\victory\captures:
 #                  when the picture shows what is wrong, run scripts\capture-now.ps1 in another window (about 9 GB,
 #                  the game stands still for a few seconds). Diagnostics build only.
+# -SixCores        helper thread pools sized for a 6-core / 12-thread CPU (experiment: compare with a run without)
+# -SmallOnCard     title buffers from 64 KiB (not 1 MiB) compared on the card (experiment)
 # Everything the run prints is also kept in %LOCALAPPDATA%\victory\logs\nvidia-<date>.log.
 # Run it from a normal window, not as administrator: the driver then keeps its shader cache elsewhere.
 param(
     [Parameter(Mandatory)][string]$Exe,
     [switch]$Capture,
+    [switch]$SixCores,
+    [switch]$SmallOnCard,
     [switch]$NoSmoothMotion,
     [switch]$SeriesX,
     [switch]$Quality,
@@ -92,6 +96,19 @@ if ($Resolution) {
     $settings.VICTORY_RENDER_SCALE = ([int]$Resolution / $outHeight).ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
 }
 if ($Adapter) { $settings.VICTORY_ADAPTER = $Adapter }
+if ($SixCores) {
+    # The helper pools are sized for a 24-thread i9 (list translation 8, title bytes under shader writes 6,
+    # descriptor records 6, picked views 4, pipeline workers two thirds of the threads). On a 12-thread
+    # Ryzen 5 5600X they share 6 cores with the title's own threads and the preparing thread: fewer of each.
+    # An experiment to compare with a run without it (same place, the pacing lines of the log).
+    $settings.VICTORY_THIN_THREADS = '5'; $settings.VICTORY_UNDER_THREADS = '3'
+    $settings.VICTORY_VIEW_THREADS = '3'; $settings.VICTORY_PIPELINE_WORKERS = '4'
+}
+if ($SmallOnCard) {
+    # Every title buffer from 64 KiB up gets its copy and compare on the card, not only those of 1 MiB and more
+    # (VICTORY_CARD_BUFFERS_MIN_KB, after fxceless c36971b2; not measured on NVIDIA yet).
+    $settings.VICTORY_CARD_BUFFERS_MIN_KB = '64'
+}
 foreach ($k in $More.Keys) { $settings[$k] = $More[$k] }
 $scale = [double]::Parse($settings.VICTORY_RENDER_SCALE, [Globalization.CultureInfo]::InvariantCulture)
 Write-Host "Series $console, rendering at $([int]($outHeight * $scale))p (render scale $($settings.VICTORY_RENDER_SCALE))"
