@@ -1,3 +1,9 @@
+> **victory-rtx3060**: fork de [fxceless/victory-fork](https://github.com/fxceless/victory-fork)
+> com ajustes para NVIDIA RTX 3060 (Ryzen 5 5600X, 32 GB): medição de ritmo de quadros,
+> medição do remapeamento de memória, build `perf` (`scripts/build-perf.ps1`) e o lançador
+> `scripts/play-nvidia.ps1`. Notas e medições: [docs/nvidia-compatibility.md](docs/nvidia-compatibility.md).
+> Nenhum arquivo de jogo está incluído: use a sua própria cópia. Licença: GPL-3.0-or-later, como o original.
+
 # VIctory fork (work in progress)
 
 A work-in-progress fork of [VIctory](https://github.com/Marvisak/VIctory), a
