@@ -573,6 +573,8 @@ extern "system" fn execute(this: This, count: u32, lists: *const This) {
     #[cfg(all(windows, feature = "diagnostics"))]
     crate::timeline::title_thread();
     #[cfg(windows)]
+    crate::gfxwatch::list_submitted(count);
+    #[cfg(windows)]
     if let Some(host) = crate::host::host() {
         // SAFETY: the title passes `count` lists.
         let lists = unsafe { std::slice::from_raw_parts(lists, count as usize) };
@@ -888,6 +890,8 @@ extern "system" fn present(
         release_held(forces());
     }
     let frame = FRAMES.fetch_add(1, Ordering::Relaxed) + 1;
+    #[cfg(windows)]
+    crate::gfxwatch::title_present();
     if frame.is_power_of_two() {
         let (draws, dispatches) = crate::list::take_counts();
         #[cfg(windows)]

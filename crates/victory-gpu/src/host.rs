@@ -955,6 +955,8 @@ fn create() -> windows::core::Result<Host> {
             .and_then(|factory| factory.EnumAdapterByLuid::<IDXGIAdapter3>(device.GetAdapterLuid()))
             .ok();
         tracing::info!("host D3D12 device ready");
+        crate::gfxwatch::reached(crate::gfxwatch::Stage::Device);
+        crate::gfxwatch::begin();
         Ok(Host {
             device,
             queue,
@@ -9030,14 +9032,20 @@ impl Host {
             #[cfg(feature = "diagnostics")]
             crate::replay::record::present(texture, state);
             let mut showing = crate::timeline::span("the host's Present");
-            let _ = p.swap_chain.Present(0, DXGI_PRESENT(0));
+            let shown = p.swap_chain.Present(0, DXGI_PRESENT(0));
             showing.next("the frame meter");
             #[cfg(feature = "diagnostics")]
             p.panel.frame(p.meter.line_due());
             p.meter.frame(p.hwnd);
             showing.end();
             #[cfg(feature = "diagnostics")]
-            return Some(probe.is_some_and(|b| crate::capture::black(&b)));
+            {
+                let black = probe.as_ref().map(|b| crate::capture::black(b));
+                crate::gfxwatch::shown(shown.0, black);
+                return Some(black.unwrap_or(false));
+            }
+            #[cfg(not(feature = "diagnostics"))]
+            crate::gfxwatch::shown(shown.0, None);
             #[cfg(not(feature = "diagnostics"))]
             Some(false)
         }
@@ -9076,6 +9084,7 @@ impl Host {
             let copy = self.new_list()?;
             copy.close();
             tracing::info!(width, height, format = format.0, "presenting to a window");
+            crate::gfxwatch::reached(crate::gfxwatch::Stage::SwapChain);
             self.log_video_memory("right after the swap chain is made");
             Ok(Presenter {
                 swap_chain,

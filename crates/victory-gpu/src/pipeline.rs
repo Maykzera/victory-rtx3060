@@ -163,6 +163,8 @@ impl Shader {
                     KEPT[2].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                     KEPT[3].fetch_add(t.host.dxil.len() as u64, std::sync::atomic::Ordering::Relaxed);
                 }
+                #[cfg(windows)]
+                crate::gfxwatch::shader(done.is_ok());
                 match &done {
                     Ok(t) => tracing::info!(
                         stage = self.stage,

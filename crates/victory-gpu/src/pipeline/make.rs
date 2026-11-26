@@ -91,6 +91,7 @@ impl Pending {
             let began = Instant::now();
             let made = HostPipeline::new(&self.shaders, self.graphics.as_deref());
             super::library::note_time(&self.key, began.elapsed().as_millis() as u64);
+            crate::gfxwatch::pipeline(made.is_some());
             made
         });
         let (lock, done) = &DONE;
