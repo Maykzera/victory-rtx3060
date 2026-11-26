@@ -6,11 +6,12 @@
 # -Set 1: -Classic, -Classic -SixCores, the default (the A/B of 26/11)
 # -Set 2: the default, the default at render scale 0.4 (432p), the default with up to 16 submissions joined
 # -Set 3: the default (16 joined, 540p), the default at 432p, 432p with up to 24 submissions joined
+# -Set 4: the default, the default with the refresh filter on several threads (VICTORY_FILTER_WIDE), that at 432p
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3)][int]$Set = 3,
+    [ValidateSet(1, 2, 3, 4)][int]$Set = 4,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -34,6 +35,13 @@ $runs = switch ($Set) {
         @{ Name = 'default (16 joined, 540p)'; Args = @{}; More = @{} },
         @{ Name = 'default at 432p'; Args = @{ Resolution = '432' }; More = @{} },
         @{ Name = '432p, 24 submissions joined'; Args = @{ Resolution = '432' }; More = @{ VICTORY_JOIN_PARTS = '24'; VICTORY_JOIN_LISTS = '144' } }
+    }
+    4 {
+        # A code change: the refreshes known to copy nothing were told one after another on the submitting
+        # thread, the wall (11 ms of refreshes a frame); VICTORY_FILTER_WIDE tells them on the kept threads.
+        @{ Name = 'default'; Args = @{}; More = @{} },
+        @{ Name = 'default + VICTORY_FILTER_WIDE'; Args = @{}; More = @{ VICTORY_FILTER_WIDE = '1' } },
+        @{ Name = '432p + VICTORY_FILTER_WIDE'; Args = @{ Resolution = '432' }; More = @{ VICTORY_FILTER_WIDE = '1' } }
     }
 }
 $i = 0
