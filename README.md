@@ -1,3 +1,10 @@
+> **victory-rtx3060**: fork de [trustno1-coder/VIctory-NVIDIA](https://github.com/trustno1-coder/VIctory-NVIDIA)
+> com o trabalho numa RTX 3060 (Ryzen 5 5600X, 32 GB): **11,3–11,7 fps** na rua no modo Series S,
+> medidor de ritmo de quadros (1% low, P99), vigia das etapas gráficas, cache de shaders feito antes
+> que vale na NVIDIA, log em arquivo e captura de quadro para replay.
+> Resultados, uso e problemas conhecidos: **[docs/rtx3060.md](docs/rtx3060.md)**.
+> Nenhum arquivo de jogo está incluído: use a sua própria cópia. Licença: GPL-3.0-or-later.
+
 # VIctory on NVIDIA
 
 ## Built from many projects
