@@ -107,7 +107,9 @@ impl Pending {
                 tracing::warn!(hash, shaders = ?self.shaders, "pipeline not built: its shader is in VICTORY_DENY_PIPELINES");
                 return None;
             }
-            HostPipeline::new(&self.shaders, self.graphics.as_deref())
+            let made = HostPipeline::new(&self.shaders, self.graphics.as_deref());
+            crate::gfxwatch::pipeline(made.is_some());
+            made
         });
         let (lock, done) = &DONE;
         let _held = lock.lock().unwrap_or_else(|e| e.into_inner());
@@ -404,12 +406,29 @@ fn next() -> Arc<Pending> {
     }
 }
 
-/// Starts the workers (half the logical processors, 2 to 8) on first use.
+/// How many workers make pipelines: `asked` (`VICTORY_PIPELINE_WORKERS`, 1 to
+/// 32), else half the logical processors, 2 to 8. A cold driver cache (the
+/// first run, a new driver) queues hundreds at once when the world loads, and
+/// with six workers on a 12-thread CPU the queue stood at 800 to 950 for
+/// minutes while their draws were dropped (black picture, subtitles only; run
+/// 2026-11-25 22:12, RTX 3060). A warm-up run gives them more of the CPU.
+fn worker_count(asked: Option<usize>, processors: usize) -> usize {
+    match asked {
+        Some(n) => n.clamp(1, 32),
+        None => (processors / 2).clamp(2, 8),
+    }
+}
+
+/// Starts the workers ([`worker_count`]) on first use.
 fn workers() -> bool {
     static RUNNING: OnceLock<bool> = OnceLock::new();
     *RUNNING.get_or_init(|| {
         let mut running = false;
-        let workers = std::thread::available_parallelism().map_or(2, |n| (n.get() / 2).clamp(2, 8));
+        let workers = worker_count(
+            std::env::var("VICTORY_PIPELINE_WORKERS").ok().and_then(|v| v.trim().parse().ok()),
+            std::thread::available_parallelism().map_or(2, |n| n.get()),
+        );
+        tracing::info!(workers, "pipeline workers");
         for i in 0..workers {
             let spawned = std::thread::Builder::new()
                 .name(format!("victory-pipelines-{i}"))
@@ -460,6 +479,16 @@ fn drained() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn worker_count_is_half_the_processors_unless_asked() {
+        assert_eq!(worker_count(None, 12), 6);
+        assert_eq!(worker_count(None, 2), 2);
+        assert_eq!(worker_count(None, 32), 8);
+        assert_eq!(worker_count(Some(11), 12), 11);
+        assert_eq!(worker_count(Some(0), 12), 1);
+        assert_eq!(worker_count(Some(500), 12), 32);
+    }
 
     /// A first use queues the pipeline and, within the budget, gets the
     /// worker's answer (here: no host pipeline for no shaders).

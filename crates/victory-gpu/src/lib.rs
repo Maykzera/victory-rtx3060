@@ -40,6 +40,12 @@ mod stats;
 mod spread;
 #[cfg(windows)]
 mod draw;
+#[cfg(windows)]
+mod gfxwatch;
+#[cfg(windows)]
+mod ambient;
+#[cfg(windows)]
+mod pacing;
 pub mod dxgi;
 pub mod fence;
 pub mod frame;
