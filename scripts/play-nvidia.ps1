@@ -13,9 +13,14 @@
 # -Build           target\diag (the default, the build all measurements are of) or target\release
 #                  (the release build ignores the ray-tracing skip list: VICTORY_SKIP_PIPELINES is a diagnostics switch)
 # -More            other settings: -More @{VICTORY_PANEL='1'}
+# -Capture         record one frame for `victory replay` (docs/replay.md) into %LOCALAPPDATA%\victory\captures:
+#                  when the picture shows what is wrong, run scripts\capture-now.ps1 in another window (about 9 GB,
+#                  the game stands still for a few seconds). Diagnostics build only.
+# Everything the run prints is also kept in %LOCALAPPDATA%\victory\logs\nvidia-<date>.log.
 # Run it from a normal window, not as administrator: the driver then keeps its shader cache elsewhere.
 param(
     [Parameter(Mandatory)][string]$Exe,
+    [switch]$Capture,
     [switch]$NoSmoothMotion,
     [switch]$SeriesX,
     [switch]$Quality,
@@ -105,9 +110,27 @@ if (-not $NoSmoothMotion) {
 # (Other settings left over in this window go; where your files are stays.)
 $paths = 'VICTORY_CONFIG', 'VICTORY_GAME_DIR', 'VICTORY_CACHE_DIR', 'VICTORY_DATA_DIR'
 Get-ChildItem Env:VICTORY_* | Where-Object { $_.Name -notin $paths } | ForEach-Object { Remove-Item "Env:$($_.Name)" }
+if ($Capture) {
+    $captures = Join-Path $env:LOCALAPPDATA 'victory\captures'
+    New-Item -ItemType Directory -Force $captures | Out-Null
+    Remove-Item (Join-Path $captures 'go') -ErrorAction SilentlyContinue
+    $settings.VICTORY_RECORD = $captures
+    Write-Host "capture: run scripts\capture-now.ps1 when the picture shows the problem ($captures)"
+}
 foreach ($k in $settings.Keys) { Set-Item "Env:$k" $settings[$k] }
 $Exe = (Resolve-Path $Exe).Path
 $runArgs = @('run', $Exe, '--execute')
 if (-not $SeriesX) { $runArgs += @('--console', 'series-s') }
+$logs = Join-Path $env:LOCALAPPDATA 'victory\logs'
+New-Item -ItemType Directory -Force $logs | Out-Null
+$log = Join-Path $logs ('nvidia-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+# the settings first, so a log says what it was run with
+$settings.Keys | Sort-Object | ForEach-Object { "# $_=$($settings[$_])" } | Set-Content $log
+Write-Host "log: $log"
 Push-Location (Join-Path $PSScriptRoot '..')   # victory.toml is looked for here
-try { & $victory @runArgs } finally { Pop-Location }
+try {
+    & $victory @runArgs 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log -Append
+} finally {
+    Pop-Location
+    Write-Host "log saved: $log"
+}
