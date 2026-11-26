@@ -7,12 +7,13 @@
 # -Set 2: the default, the default at render scale 0.4 (432p), the default with up to 16 submissions joined
 # -Set 3: the default (16 joined, 540p), the default at 432p, 432p with up to 24 submissions joined
 # -Set 4: the default, the refresh filter on several threads (VICTORY_FILTER_WIDE, since removed: no gain), that at 432p
+# -Set 6: the default, 5 and 7 threads for the refreshes (VICTORY_WIDE_THREADS; 3 by default here)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5)][int]$Set = 5,
+    [ValidateSet(1, 2, 3, 4, 5, 6)][int]$Set = 6,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -49,6 +50,13 @@ $runs = switch ($Set) {
         @{ Name = 'default'; Args = @{}; More = @{} },
         @{ Name = 'default at 432p'; Args = @{ Resolution = '432' }; More = @{} },
         @{ Name = 'default again'; Args = @{}; More = @{} }
+    }
+    6 {
+        # Judge by the preparing thread's ms a frame and the refreshes' ms (the frame line), not fps alone:
+        # the same setup gave 13.8, 14.1 and 15.2 fps in three runs.
+        @{ Name = 'default (3 refresh threads)'; Args = @{}; More = @{} },
+        @{ Name = '5 refresh threads'; Args = @{}; More = @{ VICTORY_WIDE_THREADS = '5' } },
+        @{ Name = '7 refresh threads'; Args = @{}; More = @{ VICTORY_WIDE_THREADS = '7' } }
     }
 }
 $i = 0
