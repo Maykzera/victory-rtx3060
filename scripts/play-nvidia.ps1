@@ -16,8 +16,9 @@
 # -Capture         record one frame for `victory replay` (docs/replay.md) into %LOCALAPPDATA%\victory\captures:
 #                  when the picture shows what is wrong, run scripts\capture-now.ps1 in another window (about 9 GB,
 #                  the game stands still for a few seconds). Diagnostics build only.
-# -SixCores        helper thread pools sized for a 6-core / 12-thread CPU (experiment: compare with a run without)
-# -SmallOnCard     title buffers from 64 KiB (not 1 MiB) compared on the card (experiment)
+# -SixCores        helper thread pools sized for a 6-core / 12-thread CPU (on by default with 12 threads or fewer)
+# -SmallOnCard     title buffers from 64 KiB (not 1 MiB) compared on the card (on by default)
+# -Classic         neither of the two above: the settings as measured on the RTX 5070
 # Everything the run prints is also kept in %LOCALAPPDATA%\victory\logs\nvidia-<date>.log.
 # Run it from a normal window, not as administrator: the driver then keeps its shader cache elsewhere.
 param(
@@ -25,6 +26,7 @@ param(
     [switch]$Capture,
     [switch]$SixCores,
     [switch]$SmallOnCard,
+    [switch]$Classic,
     [switch]$NoSmoothMotion,
     [switch]$SeriesX,
     [switch]$Quality,
@@ -96,17 +98,21 @@ if ($Resolution) {
     $settings.VICTORY_RENDER_SCALE = ([int]$Resolution / $outHeight).ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
 }
 if ($Adapter) { $settings.VICTORY_ADAPTER = $Adapter }
-if ($SixCores) {
+# Measured on a Ryzen 5 5600X + RTX 3060 (26/11, three 6-minute runs in one place, scriptsench-3060.ps1):
+# as it was 13.0 fps (preparing thread 72 ms a frame, copying back 26-28 ms); with both below 14.0 fps and the end
+# of the run at 15-16 fps (preparing 55 ms, copying back 15.6 ms, list translation 263 ms of CPU instead of 400).
+# On by default on CPUs of up to 12 threads (-SixCores forces it); -Classic: the settings as they were.
+$small = [Environment]::ProcessorCount -le 12
+if (($small -or $SixCores) -and -not $Classic) {
     # The helper pools are sized for a 24-thread i9 (list translation 8, title bytes under shader writes 6,
     # descriptor records 6, picked views 4, pipeline workers two thirds of the threads). On a 12-thread
-    # Ryzen 5 5600X they share 6 cores with the title's own threads and the preparing thread: fewer of each.
-    # An experiment to compare with a run without it (same place, the pacing lines of the log).
+    # CPU they share 6 cores with the title's own threads and the preparing thread: fewer of each.
     $settings.VICTORY_THIN_THREADS = '5'; $settings.VICTORY_UNDER_THREADS = '3'
     $settings.VICTORY_VIEW_THREADS = '3'; $settings.VICTORY_PIPELINE_WORKERS = '4'
 }
-if ($SmallOnCard) {
+if (-not $Classic -or $SmallOnCard) {
     # Every title buffer from 64 KiB up gets its copy and compare on the card, not only those of 1 MiB and more
-    # (VICTORY_CARD_BUFFERS_MIN_KB, after fxceless c36971b2; not measured on NVIDIA yet).
+    # (VICTORY_CARD_BUFFERS_MIN_KB, after fxceless c36971b2): copying back 26-28 -> 15.6 ms a frame on the 3060.
     $settings.VICTORY_CARD_BUFFERS_MIN_KB = '64'
 }
 foreach ($k in $More.Keys) { $settings[$k] = $More[$k] }
@@ -120,9 +126,14 @@ if (-not $NoSmoothMotion) {
     # A copy under the name the NVIDIA App's Smooth Motion profile is set for, refreshed when the build changes.
     $sm = Join-Path (Split-Path $victory) 'victory_sm.exe'
     if (-not (Test-Path $sm) -or (Get-Item $sm).LastWriteTime -lt (Get-Item $victory).LastWriteTime) {
-        Copy-Item $victory $sm -Force
+        try { Copy-Item $victory $sm -Force -ErrorAction Stop } catch { Write-Host "victory_sm.exe could not be refreshed ($($_.Exception.Message))" }
     }
-    $victory = $sm
+    # A copy older than the build (it was running when the build changed): run the build itself.
+    if ((Test-Path $sm) -and (Get-Item $sm).LastWriteTime -ge (Get-Item $victory).LastWriteTime) {
+        $victory = $sm
+    } else {
+        Write-Host "victory_sm.exe is older than the build: running victory.exe (no Smooth Motion profile this time)"
+    }
 }
 # (Other settings left over in this window go; where your files are stays.)
 $paths = 'VICTORY_CONFIG', 'VICTORY_GAME_DIR', 'VICTORY_CACHE_DIR', 'VICTORY_DATA_DIR'
@@ -142,12 +153,17 @@ $logs = Join-Path $env:LOCALAPPDATA 'victory\logs'
 New-Item -ItemType Directory -Force $logs | Out-Null
 $log = Join-Path $logs ('nvidia-{0}.log' -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 # the settings first, so a log says what it was run with
-$settings.Keys | Sort-Object | ForEach-Object { "# $_=$($settings[$_])" } | Set-Content $log
+# (UTF-8 throughout: Tee-Object of Windows PowerShell 5.1 appends UTF-16.)
+$writer = [IO.StreamWriter]::new($log, $false, [Text.UTF8Encoding]::new($false))
+$settings.Keys | Sort-Object | ForEach-Object { $writer.WriteLine("# $_=$($settings[$_])") }
+$writer.WriteLine("# exe=$victory")
+$writer.Flush()
 Write-Host "log: $log"
 Push-Location (Join-Path $PSScriptRoot '..')   # victory.toml is looked for here
 try {
-    & $victory @runArgs 2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log -Append
+    & $victory @runArgs 2>&1 | ForEach-Object { $line = "$_"; $writer.WriteLine($line); $line }
 } finally {
+    $writer.Dispose()
     Pop-Location
     Write-Host "log saved: $log"
 }

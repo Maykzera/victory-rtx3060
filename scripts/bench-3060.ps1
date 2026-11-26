@@ -1,5 +1,5 @@
 # Runs the three speed setups one after another, each for -Minutes, and closes each run by itself:
-#   1. play-nvidia.ps1 as it is      2. -SixCores      3. -SixCores -SmallOnCard
+#   1. -Classic (the RTX 5070 settings)   2. -Classic -SixCores   3. the default (six cores + small buffers on the card)
 # In each run: pick Continue in the menu, then leave the character standing still (same place every run).
 # Each run keeps its log in %LOCALAPPDATA%\victory\logs\nvidia-<date>.log; compare them afterwards.
 #   scripts\bench-3060.ps1 -Exe <path of your own copy's executable> [-Minutes 6]
@@ -9,9 +9,9 @@ param(
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
 $runs = @(
-    @{ Name = 'normal'; Args = @{} },
-    @{ Name = 'SixCores'; Args = @{ SixCores = $true } },
-    @{ Name = 'SixCores + SmallOnCard'; Args = @{ SixCores = $true; SmallOnCard = $true } }
+    @{ Name = 'Classic'; Args = @{ Classic = $true } },
+    @{ Name = 'Classic + SixCores'; Args = @{ Classic = $true; SixCores = $true } },
+    @{ Name = 'default'; Args = @{} }
 )
 $i = 0
 foreach ($run in $runs) {
