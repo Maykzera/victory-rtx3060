@@ -5,11 +5,12 @@
 #   scripts\bench-3060.ps1 -Exe <path of your own copy's executable> [-Minutes 6] [-Set 2]
 # -Set 1: -Classic, -Classic -SixCores, the default (the A/B of 26/11)
 # -Set 2: the default, the default at render scale 0.4 (432p), the default with up to 16 submissions joined
+# -Set 3: the default (16 joined, 540p), the default at 432p, 432p with up to 24 submissions joined
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2)][int]$Set = 2,
+    [ValidateSet(1, 2, 3)][int]$Set = 3,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -26,6 +27,13 @@ $runs = switch ($Set) {
         @{ Name = 'default'; Args = @{}; More = @{} },
         @{ Name = 'default at render scale 0.4 (432p)'; Args = @{}; More = @{ VICTORY_RENDER_SCALE = '0.4' } },
         @{ Name = 'default, 16 submissions joined'; Args = @{}; More = @{ VICTORY_JOIN_PARTS = '16'; VICTORY_JOIN_LISTS = '96' } }
+    }
+    3 {
+        # Round 2's two gains together (432p: 15.0 fps; 16 joined, now the default: better lows), and joining
+        # further (24 submissions, 144 lists).
+        @{ Name = 'default (16 joined, 540p)'; Args = @{}; More = @{} },
+        @{ Name = 'default at 432p'; Args = @{ Resolution = '432' }; More = @{} },
+        @{ Name = '432p, 24 submissions joined'; Args = @{ Resolution = '432' }; More = @{ VICTORY_JOIN_PARTS = '24'; VICTORY_JOIN_LISTS = '144' } }
     }
 }
 $i = 0
