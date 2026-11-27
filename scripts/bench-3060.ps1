@@ -8,12 +8,13 @@
 # -Set 3: the default (16 joined, 540p), the default at 432p, 432p with up to 24 submissions joined
 # -Set 4: the default, the refresh filter on several threads (VICTORY_FILTER_WIDE, since removed: no gain), that at 432p
 # -Set 6: the diag build, the perf build, the perf build with 5 refresh threads (VICTORY_WIDE_THREADS)
+# -Set 7: the default with the texture side's timers, and the default with 5 refresh threads (round 6's third run did not reach the world)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6)][int]$Set = 6,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7)][int]$Set = 7,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -59,6 +60,13 @@ $runs = switch ($Set) {
         @{ Name = 'diag build'; Args = @{}; More = @{} },
         @{ Name = 'perf build'; Args = @{ Build = 'perf' }; More = @{} },
         @{ Name = 'perf build, 5 refresh threads'; Args = @{ Build = 'perf' }; More = @{ VICTORY_WIDE_THREADS = '5' } }
+    }
+    7 {
+        # Timers inside the texture side of the heap pass (2-15 ms a frame in the world, 40 at a scene's start;
+        # the line "the texture side per frame"): which part to move off the frame's thread. Also the 5 refresh
+        # threads again, on the diag build (round 6's run stopped before the world).
+        @{ Name = 'default, texture timers'; Args = @{}; More = @{} },
+        @{ Name = 'default, 5 refresh threads'; Args = @{}; More = @{ VICTORY_WIDE_THREADS = '5' } }
     }
 }
 $i = 0

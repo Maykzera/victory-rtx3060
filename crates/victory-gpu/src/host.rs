@@ -7516,6 +7516,19 @@ fn split_line(frames: f64) {
         h[2],
         aside::WAITED.swap(0, Ordering::Relaxed) as f64 / 1e3 / frames,
     );
+    let t: Vec<f64> = crate::draw::TEXTURE_SPLIT.iter().map(|n| n.swap(0, Ordering::Relaxed) as f64 / frames).collect();
+    tracing::info!(
+        "the texture side per frame: {:.1} ms finding what is due, {:.1} looking again at uploaded slots ({:.0} looks), \
+         {:.1} asking what is mapped, {:.1} readying uploads ({:.0} slots), {:.1} sending uploads ahead, {:.1} after the uploads",
+        t[0] / 1e6,
+        t[1] / 1e6,
+        t[7],
+        t[2] / 1e6,
+        t[3] / 1e6,
+        t[6],
+        t[4] / 1e6,
+        t[5] / 1e6,
+    );
 }
 
 /// Whether a submission's refreshes of host copies run on several threads,

@@ -493,6 +493,41 @@ pub(crate) static HEAP_BUFFER_MICROS: AtomicU64 = AtomicU64::new(0);
 /// the spans and refreshes of their copies, the texture side.
 #[cfg(feature = "diagnostics")]
 pub(crate) static HEAP_SPLIT: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
+/// Of the texture side ([`State::heap_textures`]), nanoseconds since the last
+/// frame line: before the slots (what is due), the looks at uploaded slots
+/// (fingerprints), the mapping queries, readying (`readable`: staging,
+/// detiling, recording the upload), the uploads sent ahead, and what follows
+/// an upload (unstaging, the fingerprint to look again); then how many
+/// slots were readied and how many looked at.
+#[cfg(feature = "diagnostics")]
+pub(crate) static TEXTURE_SPLIT: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
+
+/// Adds its lifetime's nanoseconds to `TEXTURE_SPLIT[.0]` when dropped
+/// (diagnostics; nothing otherwise).
+#[cfg(feature = "diagnostics")]
+struct TexTime((usize, std::time::Instant));
+#[cfg(not(feature = "diagnostics"))]
+struct TexTime;
+
+impl TexTime {
+    #[cfg(feature = "diagnostics")]
+    #[inline]
+    fn start(i: usize) -> Self {
+        TexTime((i, std::time::Instant::now()))
+    }
+    #[cfg(not(feature = "diagnostics"))]
+    #[inline]
+    fn start(_i: usize) -> Self {
+        TexTime
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+impl Drop for TexTime {
+    fn drop(&mut self) {
+        TEXTURE_SPLIT[self.0.0].fetch_add(self.0.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
 
 /// Passes after which every buffer slot of the heap was looked at again.
 const HEAP_ROUND: u64 = 16;
@@ -2134,6 +2169,7 @@ impl State {
         if !*ON.get_or_init(|| std::env::var_os("VICTORY_HEAP_TEXTURES").is_none_or(|v| v != "0")) {
             return;
         }
+        let finding = TexTime::start(0);
         let memory = crate::host::host().and_then(|h| h.video_memory());
         // `VICTORY_TEXTURE_STAGE_MB` sets it: a backlog of tens of thousands of
         // textures (a scene's first minutes) then drains in fewer frames.
@@ -2266,6 +2302,7 @@ impl State {
         let began = std::time::Instant::now();
         BAKE_SERVED.store(0, Ordering::Relaxed);
         let mut served = true;
+        drop(finding);
         for (index, write) in due {
             if SPENT.load(Ordering::Relaxed) >= bytes_at_most || began.elapsed() > span {
                 served = false;
@@ -2296,7 +2333,10 @@ impl State {
             // (all their blocks are shown at other addresses too), and each
             // was shown four frames late, over and over.
             let mut again_in = RECHECK_FRAMES[0];
+            let looking = TexTime::start(1);
             if let Some((at, len, print, looks, uploaded)) = host.texture_slot_checked(index) {
+                #[cfg(feature = "diagnostics")]
+                TEXTURE_SPLIT[7].fetch_add(1, Ordering::Relaxed);
                 if crate::texture::fingerprint(at, len) == print {
                     HEAP_TEXTURES_RECHECKED[0].fetch_add(1, Ordering::Relaxed);
                     match RECHECK_FRAMES.get(usize::from(looks) + 1) {
@@ -2332,13 +2372,16 @@ impl State {
                     );
                 }
             }
+            drop(looking);
             let mut partly = None;
             let mut there = None;
             if let Some(View::Placed(false, resource, desc)) = heap.handle(index).and_then(crate::descriptor::view) {
                 let address = u64::from(desc[10]) | u64::from(desc[11]) << 32;
                 let first = crate::resource::first_mip(&desc);
                 let len = crate::resource::placed_bytes_from(&resource, first).unwrap_or(1);
+                let asking = TexTime::start(2);
                 let mapped = crate::texture::mapped_bytes(address as *const u8, len as usize);
+                drop(asking);
                 if mapped == 0 {
                     HEAP_TEXTURES_AWAY.fetch_add(1, Ordering::Relaxed);
                     // Streamed out: what the slot showed is let go.
@@ -2484,6 +2527,7 @@ impl State {
             }
             // The first upload of a texture no list has used: on a queue of
             // its own, and the slot shows it as soon as that has run.
+            let sending = TexTime::start(4);
             let ahead = if late && !tabled && texture.is_some_and(crate::pool::fresh) {
                 crate::texture::ahead::take(resource, first, there.filter(|_| partly.is_none()).unwrap_or(u64::MAX))
             } else {
@@ -2499,10 +2543,14 @@ impl State {
                     crate::texture::ahead::send(job);
                 }
             }
+            drop(sending);
             let late = late && ahead.is_none();
             if let Some(view) = &view
                 && ahead.is_none()
             {
+                let _readying = TexTime::start(3);
+                #[cfg(feature = "diagnostics")]
+                TEXTURE_SPLIT[6].fetch_add(1, Ordering::Relaxed);
                 // (What was found mapped of it a moment ago is not asked
                 // again, unless the host copy may need more.)
                 crate::texture::PICKING.set(Some(there.filter(|_| partly.is_none()).unwrap_or(u64::MAX)));
@@ -2543,6 +2591,7 @@ impl State {
                 crate::host::log_removal_context();
                 return;
             }
+            let _after = TexTime::start(5);
             let (bytes, whole) = crate::texture::staged(resource, there.is_none()).unwrap_or((0, true));
             // Not all of it there: looked at again next frame, and from
             // then on as a slot with nothing new (a placed texture: until
