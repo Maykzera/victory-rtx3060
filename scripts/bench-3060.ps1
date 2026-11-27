@@ -10,12 +10,13 @@
 # -Set 6: the diag build, the perf build, the perf build with 5 refresh threads (VICTORY_WIDE_THREADS)
 # -Set 7: the default with the texture side's timers, and the default with 5 refresh threads (round 6's third run did not reach the world)
 # -Set 8: the default with timers per kind of list call, and the default with 4 list threads (VICTORY_THIN_THREADS)
+# -Set 9: the default with timers inside binding and indirect executions, and 4 list threads again
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8)][int]$Set = 8,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9)][int]$Set = 9,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -74,6 +75,13 @@ $runs = switch ($Set) {
         # ~200 ms of processor time a frame (8 us a call) on the list threads. Timers per kind of call (the line
         # "list calls translated per frame, by kind"), and one list thread fewer on the six cores.
         @{ Name = 'default, timers per kind of call'; Args = @{}; More = @{} },
+        @{ Name = 'default, 4 list threads'; Args = @{}; More = @{ VICTORY_THIN_THREADS = '4' } }
+    }
+    9 {
+        # Round 8: indirect executions are ~60% of translating the list calls (4,000 a frame, 31 us each),
+        # dispatches 31 us each too: timers inside binding and indirect executions (the line "binding per
+        # frame"). And 4 list threads once more (round 8: 14.0 against 13.7 fps, within the noise).
+        @{ Name = 'default, timers inside binding'; Args = @{}; More = @{} },
         @{ Name = 'default, 4 list threads'; Args = @{}; More = @{ VICTORY_THIN_THREADS = '4' } }
     }
 }

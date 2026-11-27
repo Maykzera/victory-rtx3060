@@ -7529,6 +7529,20 @@ fn split_line(frames: f64) {
         t[4] / 1e6,
         t[5] / 1e6,
     );
+    let b: Vec<f64> = crate::draw::BIND_SPLIT.iter().map(|n| n.swap(0, Ordering::Relaxed) as f64 / 1e6 / frames).collect();
+    tracing::info!(
+        "binding per frame (all threads): {:.1} ms in all, of it {:.1} early texture passes, {:.1} descriptor tables, \
+         {:.1} title memory by address; indirect executions: {:.1} ms before binding (of it {:.1} the clamp), {:.1} binding, \
+         {:.1} the host call and after",
+        b[2],
+        b[0],
+        b[1],
+        b[3],
+        b[4],
+        b[5],
+        b[6],
+        b[7],
+    );
 }
 
 /// Whether a submission's refreshes of host copies run on several threads,

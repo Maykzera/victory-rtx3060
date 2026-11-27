@@ -493,6 +493,40 @@ pub(crate) static HEAP_BUFFER_MICROS: AtomicU64 = AtomicU64::new(0);
 /// the spans and refreshes of their copies, the texture side.
 #[cfg(feature = "diagnostics")]
 pub(crate) static HEAP_SPLIT: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
+/// Of binding and indirect executions, nanoseconds since the last frame line
+/// (all threads): in `bind` the early texture passes, the descriptor tables,
+/// all of it, title memory by address; in `execute_indirect` what comes before
+/// binding (lookups, refreshes, the clamp), the clamp alone, the binding, and
+/// the host call with what follows (diagnostics).
+#[cfg(feature = "diagnostics")]
+pub(crate) static BIND_SPLIT: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
+
+/// Adds its lifetime's nanoseconds to `BIND_SPLIT[i]` when dropped
+/// (diagnostics; nothing otherwise).
+#[cfg(feature = "diagnostics")]
+struct BindTime(usize, std::time::Instant);
+#[cfg(not(feature = "diagnostics"))]
+struct BindTime;
+
+impl BindTime {
+    #[cfg(feature = "diagnostics")]
+    #[inline]
+    fn start(i: usize) -> Self {
+        BindTime(i, std::time::Instant::now())
+    }
+    #[cfg(not(feature = "diagnostics"))]
+    #[inline]
+    fn start(_i: usize) -> Self {
+        BindTime
+    }
+}
+
+#[cfg(feature = "diagnostics")]
+impl Drop for BindTime {
+    fn drop(&mut self) {
+        BIND_SPLIT[self.0].fetch_add(self.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
 /// Of the texture side ([`State::heap_textures`]), nanoseconds since the last
 /// frame line: before the slots (what is due), the looks at uploaded slots
 /// (fingerprints), the mapping queries, readying (`readable`: staging,
@@ -1475,9 +1509,12 @@ impl State {
     /// False if the draw or dispatch must not run: a root SRV it reads
     /// could not be given a view.
     pub(crate) fn bind(&mut self, list: &HostList, p: &HostPipeline, compute: bool) -> bool {
+        let _all = BindTime::start(2);
         let l = &list.list;
         // Textures picked by index, before anything asks for them.
+        let early = BindTime::start(0);
         self.early_textures(list, p, compute);
+        drop(early);
         if crate::host::walls_trace() {
             self.walls_census(p, compute);
         }
@@ -1541,6 +1578,7 @@ impl State {
             if t.stores && crate::picked::on() && crate::picked::picks(&stage.shader, &t.picks) {
                 crate::picked::runs_in(list);
             }
+            let tabling = BindTime::start(1);
             let made = self.tables(
                 list,
                 &t.used,
@@ -1548,6 +1586,7 @@ impl State {
                 &t.host.half_views,
                 compute,
             );
+            drop(tabling);
             STORES.set(true);
             if made.iter().any(|m| m.1 == u32::MAX) {
                 once!("a draw whose descriptor table found no free slots is dropped");
@@ -1570,7 +1609,10 @@ impl State {
                 } else {
                     crate::memory::Use::Reads
                 };
-                let Some(ready) = self.memory_ready(list, &t, compute, use_) else {
+                let readying = BindTime::start(3);
+                let ready = self.memory_ready(list, &t, compute, use_);
+                drop(readying);
+                let Some(ready) = ready else {
                     once!("a shader that reads title memory by address without a view heap to hold its views: the draw is dropped");
                     return false;
                 };
@@ -3903,6 +3945,7 @@ impl State {
             ));
             return false;
         }
+        let before = BindTime::start(4);
         let len = u64::from(stride) * u64::from(max.max(1));
         let Some(args) = crate::shadow::find_any(arguments, len) else {
             why("arguments outside title buffers");
@@ -3996,11 +4039,13 @@ impl State {
                 let count_arg = counter.as_ref().map(|(s, at)| (&s.buffer, s.offset(*at)));
                 // More than the record asked for: a window clamped ahead,
                 // whose unfilled slots must not spend the list's budget.
+                let clamping = BindTime::start(5);
                 let bounded = if windowed && records > 1 {
                     crate::indirect::bound_ahead(list, (&args.buffer, offset), (kind, step, records))
                 } else {
                     crate::indirect::bound(list, (&args.buffer, offset), count_arg, (kind, step, records))
                 };
+                drop(clamping);
                 let Some(bounded) = bounded else {
                     self.window = None;
                     why("not bounded (no clamp, or arguments not 4-byte aligned)");
@@ -4020,16 +4065,20 @@ impl State {
                 (bounded, 0)
             }
         };
+        drop(before);
+        let binding = BindTime::start(6);
         let ran = match kind {
             DRAW | INDEXED => self.prepare(list, kind == INDEXED),
             MESH => self.prepare_for(list, false, true),
             DISPATCH => self.bind(list, p, true),
             _ => false,
         };
+        drop(binding);
         if !ran {
             why("prepare failed");
             return false;
         }
+        let _calling = BindTime::start(7);
         #[cfg(feature = "diagnostics")]
         list.note_op(|| {
             self.op_text(format!("indirect kind {kind} max {max} at {arguments:#x}"), kind == DISPATCH)
