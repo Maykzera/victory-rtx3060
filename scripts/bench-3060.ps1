@@ -19,12 +19,14 @@
 # -Set 15: the title's page mappings on 8 threads (VICTORY_MAP_THREADS=8, VIctory's own default), and on 1 (this fork's)
 # -Set 16: page mappings that ask for what the pages show already left alone (VICTORY_ALIAS_SAME, removed after: none were), and the default
 # -Set 17: buffers only the card uses left on the card (VICTORY_GPU_ONLY, from Victory-NV-Lite; taken out after: no buffer qualified), and the default
+# -Set 18: the title one frame further ahead of the submitting thread (VICTORY_SUBMIT_FRAMES=2, the default after it), and 1
+# -Set 19: more helper threads for the submitting thread's work (under 6, refresh 5, records 6), and the default
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)][int]$Set = 17,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)][int]$Set = 19,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -145,6 +147,22 @@ $runs = switch ($Set) {
         # is not seen at are copied whole once, then not refreshed, compared or copied back. Its README: full buffer
         # copies 42.5 -> 0.2 MB a frame. Look at the picture too: a CPU write it misses would show.
         @{ Name = 'buffers only the card uses left on the card'; Args = @{}; More = @{ VICTORY_GPU_ONLY = '1' } },
+        @{ Name = 'default'; Args = @{}; More = @{} }
+    }
+    18 {
+        # Round 17's log: the submitting thread works ~60 ms of each ~64 ms frame, and the title's thread waits
+        # ~35 ms a frame at presents for it. With one present more allowed in the line the title records ahead
+        # while the thread works, so the thread need not stand idle between frames. Both runs count why parts
+        # are not joined (the line "parts not taken along").
+        @{ Name = 'title one frame further ahead'; Args = @{}; More = @{ VICTORY_SUBMIT_FRAMES = '2' } },
+        @{ Name = 'default'; Args = @{}; More = @{ VICTORY_SUBMIT_FRAMES = '1' } }
+    }
+    19 {
+        # Round 18: the submitting thread works ~60 ms of a ~64 ms frame and is the one limit left, with ~29 % of the
+        # processor idle. The pools that help it were cut for six cores when the processor was the crowded part:
+        # the title's bytes under flights' writes (UNDER 3 -> 6), the refresh flushes (WIDE 3 -> 5), the heaps'
+        # records (VIEW 3 -> 6, which also sizes the views pool).
+        @{ Name = 'more helpers for the submitting thread'; Args = @{}; More = @{ VICTORY_UNDER_THREADS = '6'; VICTORY_WIDE_THREADS = '5'; VICTORY_VIEW_THREADS = '6' } },
         @{ Name = 'default'; Args = @{}; More = @{} }
     }
 }

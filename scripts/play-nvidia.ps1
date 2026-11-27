@@ -118,6 +118,10 @@ if (-not $Classic) {
     # Up to 16 submissions (96 lists) prepared together instead of 8 (48): per-submission work off the preparing
     # thread. RTX 3060, 26/11, 6-minute runs: 13.6 -> 14.2 fps on average, 1% low 7.8 -> 9.2 fps, P99 121 -> 103 ms.
     $settings.VICTORY_JOIN_PARTS = '16'; $settings.VICTORY_JOIN_LISTS = '96'
+    # One present more in the line before the title's present waits (VICTORY_SUBMIT_FRAMES 1 -> 2): the title
+    # waited ~33 ms a frame there for the preparing thread, which then stood idle between frames. RTX 3060,
+    # 27/11, round 18: 13.4 -> 14.0 fps, frame median 67.8 -> 64.9 ms, 1% low 6.0 -> 8.8, wait at presents 33 -> 0 ms.
+    $settings.VICTORY_SUBMIT_FRAMES = '2'
 }
 if (-not $Classic -or $SmallOnCard) {
     # Every title buffer from 64 KiB up gets its copy and compare on the card, not only those of 1 MiB and more
