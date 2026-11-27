@@ -172,6 +172,48 @@ static BACKS: Mutex<Vec<usize>> = Mutex::new(Vec::new());
 static CHUNKS: AtomicU64 = AtomicU64::new(0);
 static STATS: [AtomicU64; 4] = [const { AtomicU64::new(0) }; 4];
 
+/// Per kind of call (`Plain` and the ones after it), since the last frame line:
+/// nanoseconds translating it (all threads) and how many (diagnostics).
+#[cfg(feature = "diagnostics")]
+static OPS: [[AtomicU64; 2]; 64] = [const { [AtomicU64::new(0), AtomicU64::new(0)] }; 64];
+
+/// Adds its lifetime to `OPS[.0]` when dropped.
+#[cfg(feature = "diagnostics")]
+struct OpTime(usize, std::time::Instant);
+
+#[cfg(feature = "diagnostics")]
+impl Drop for OpTime {
+    fn drop(&mut self) {
+        if let Some([ns, n]) = OPS.get(self.0) {
+            ns.fetch_add(self.1.elapsed().as_nanos() as u64, Relaxed);
+            n.fetch_add(1, Relaxed);
+        }
+    }
+}
+
+/// The name of call kind `op`, for the frame line.
+#[cfg(feature = "diagnostics")]
+fn op_name(op: usize) -> String {
+    const PLAIN: [&str; 29] = [
+        "topology", "stencil_ref", "depth_bounds", "compute_table", "graphics_table", "compute_constant",
+        "graphics_constant", "compute_view", "graphics_view", "set_pipeline", "draw", "draw_indexed", "dispatch",
+        "dispatch_x", "dispatch_mesh", "dispatch_mesh_x", "copy_buffer", "copy_resource", "copy_resource_x",
+        "copy_memory", "resolve", "resolve_queries", "execute_indirect", "write32", "write64", "wait_value",
+        "wait_value64", "sync",
+        "?",
+    ];
+    const AFTER: [&str; 16] = [
+        "reset", "close", "upload", "barrier", "barrier_groups", "viewports", "scissors", "blend_factor", "heaps",
+        "compute_constants", "graphics_constants", "index_buffer", "vertex_buffers", "targets", "clear_rtv", "clear_dsv",
+    ];
+    let end = Plain::END as usize;
+    if op < end {
+        PLAIN.get(op).map_or_else(|| format!("op{op}"), |s| (*s).to_owned())
+    } else {
+        AFTER.get(op - end).map_or_else(|| format!("op{op}"), |s| (*s).to_owned())
+    }
+}
+
 fn held<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -357,6 +399,22 @@ pub(crate) fn line(frames: f64) {
         CHUNKS.swap(0, Relaxed) as f64 / frames,
         s[3]
     );
+    #[cfg(feature = "diagnostics")]
+    {
+        let mut ops: Vec<(usize, f64, f64)> = OPS
+            .iter()
+            .enumerate()
+            .map(|(op, [ns, n])| (op, ns.swap(0, Relaxed) as f64 / frames, n.swap(0, Relaxed) as f64 / frames))
+            .filter(|&(_, ns, _)| ns > 0.0)
+            .collect();
+        ops.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let text: Vec<String> = ops
+            .iter()
+            .take(12)
+            .map(|&(op, ns, n)| format!("{} {:.1} ms in {:.0} ({:.1} us each)", op_name(op), ns / 1e6, n, ns / 1e3 / n.max(1.0)))
+            .collect();
+        tracing::info!("list calls translated per frame, by kind (all threads): {}", text.join(", "));
+    }
 }
 
 #[inline]
@@ -702,6 +760,8 @@ fn translate(list: This, stream: &[u64], left: impl Fn() -> bool) -> (u64, bool)
         if skip && op != CLOSE && op != RESET {
             continue;
         }
+        #[cfg(feature = "diagnostics")]
+        let _timed = OpTime(op as usize, std::time::Instant::now());
         if run_plain(op, list, w) {
             continue;
         }
