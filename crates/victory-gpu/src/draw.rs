@@ -501,6 +501,46 @@ pub(crate) static HEAP_SPLIT: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
 #[cfg(feature = "diagnostics")]
 pub(crate) static BIND_SPLIT: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
 
+/// Inside [`State::tables`], since the last frame line (all threads): ns in
+/// `table_entry` (tables not made afresh), ns hashing the fresh tables' keys,
+/// ns of tables found made (cache hits), ns of tables made, ns in `readable`
+/// (from anywhere); then counts: tables found made with nothing to do again,
+/// tables found made and brought up to date, tables made, calls of `tables`,
+/// calls of `readable` (diagnostics).
+#[cfg(feature = "diagnostics")]
+pub(crate) static TABLE_SPLIT: [AtomicU64; 10] = [const { AtomicU64::new(0) }; 10];
+
+/// Adds its lifetime's nanoseconds to the counter when dropped (diagnostics).
+#[cfg(feature = "diagnostics")]
+struct Timed(&'static AtomicU64, std::time::Instant);
+#[cfg(not(feature = "diagnostics"))]
+struct Timed;
+
+#[cfg(feature = "diagnostics")]
+#[inline]
+fn timed(i: usize) -> Timed {
+    Timed(&TABLE_SPLIT[i], std::time::Instant::now())
+}
+#[cfg(not(feature = "diagnostics"))]
+#[inline]
+fn timed(_i: usize) -> Timed {
+    Timed
+}
+
+#[cfg(feature = "diagnostics")]
+impl Drop for Timed {
+    fn drop(&mut self) {
+        self.0.fetch_add(self.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+    }
+}
+
+/// Counts one in `TABLE_SPLIT[i]` (diagnostics).
+#[inline]
+fn table_count(_i: usize) {
+    #[cfg(feature = "diagnostics")]
+    TABLE_SPLIT[_i].fetch_add(1, Ordering::Relaxed);
+}
+
 /// Adds its lifetime's nanoseconds to `BIND_SPLIT[i]` when dropped
 /// (diagnostics; nothing otherwise).
 #[cfg(feature = "diagnostics")]
@@ -3291,6 +3331,7 @@ impl State {
         half: &[(u8, u32)],
         compute: bool,
     ) -> Few<(u8, u32), 16> {
+        table_count(8);
         let tables = |u: &&UsedResource| u.root == RootType::Table;
         let mut fresh: Few<u8, 16> = Few::default();
         for u in used.iter().filter(tables).filter(|u| u.kind == ResourceType::Cbv) {
@@ -3350,11 +3391,13 @@ impl State {
             }
         }
         fresh.sort_unstable();
+        let entering = timed(0);
         for u in used.iter().filter(tables) {
             if !fresh.contains(&u.slot) {
                 self.table_entry(list, u, compute);
             }
         }
+        drop(entering);
         let mut made = Few::default();
         for &slot in fresh.iter() {
             let Some(&Root::Table(table)) = self.roots_ref(compute).get(usize::from(slot)) else {
@@ -3414,6 +3457,7 @@ impl State {
                 continue;
             }
             // The table and what its entries hold (record words).
+            let hashing = timed(1);
             let key = {
                 let mut h = RecordHash::default();
                 for k in 0..n {
@@ -3428,9 +3472,11 @@ impl State {
                 }
                 (table, n, h.0)
             };
+            drop(hashing);
             // Who reads of it, and as what, as far as [`readable`] goes by it.
             let reader = (used.as_ptr() as usize, used.len(), STORES.get(), TESTED_DEPTH.get().0);
             if let Some(known) = self.fresh_tables.get_mut(&key) {
+                let _found = timed(2);
                 let first = known.first;
                 // This reader had it brought up to date, and nothing in the
                 // list changed since: nothing to do again.
@@ -3442,9 +3488,11 @@ impl State {
                     if *depth {
                         TESTED_DEPTH.set((reader.3, true));
                     }
+                    table_count(5);
                     made.push((slot, first * 32));
                     continue;
                 }
+                table_count(6);
                 let depth_before = TESTED_DEPTH.get();
                 TESTED_DEPTH.set((depth_before.0, false));
                 for u in entries().filter(|u| u.kind != ResourceType::Cbv) {
@@ -3487,6 +3535,8 @@ impl State {
                 made.push((slot, u32::MAX));
                 continue;
             };
+            let _making = timed(3);
+            table_count(7);
             self.fresh_tables.insert(key, FreshTable { first, epoch: 0, ready: Vec::new() });
             self.dynamic
                 .push((std::ptr::from_ref(heap) as usize, first, n));
@@ -4325,6 +4375,8 @@ impl RecordHash {
 }
 
 fn readable(list: &HostList, kind: ResourceType, view: &View) {
+    let _timed = timed(4);
+    table_count(9);
     const UNORDERED_ACCESS: u32 = 0x8;
     let placed = crate::descriptor::host::placed_texture(view);
     let view = placed.as_ref().unwrap_or(view);

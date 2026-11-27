@@ -11,12 +11,13 @@
 # -Set 7: the default with the texture side's timers, and the default with 5 refresh threads (round 6's third run did not reach the world)
 # -Set 8: the default with timers per kind of list call, and the default with 4 list threads (VICTORY_THIN_THREADS)
 # -Set 9: the default with timers inside binding and indirect executions, and 4 list threads again
+# -Set 10: the default (4 list threads now) with timers inside the descriptor tables, twice
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9)][int]$Set = 9,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)][int]$Set = 10,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -83,6 +84,13 @@ $runs = switch ($Set) {
         # frame"). And 4 list threads once more (round 8: 14.0 against 13.7 fps, within the noise).
         @{ Name = 'default, timers inside binding'; Args = @{}; More = @{} },
         @{ Name = 'default, 4 list threads'; Args = @{}; More = @{ VICTORY_THIN_THREADS = '4' } }
+    }
+    10 {
+        # Round 9: the descriptor tables are 124 of the 155 ms a frame of binding (all threads). Timers inside
+        # them (the line "descriptor tables per frame"); the default is 4 list threads now. Twice: the same
+        # setup, for the spread.
+        @{ Name = 'default (4 list threads), timers inside the tables'; Args = @{}; More = @{} },
+        @{ Name = 'the same again'; Args = @{}; More = @{} }
     }
 }
 $i = 0

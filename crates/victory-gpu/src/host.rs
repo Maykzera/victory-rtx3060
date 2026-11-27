@@ -7543,6 +7543,20 @@ fn split_line(frames: f64) {
         b[6],
         b[7],
     );
+    let t: Vec<f64> = crate::draw::TABLE_SPLIT.iter().map(|n| n.swap(0, Ordering::Relaxed) as f64 / frames).collect();
+    tracing::info!(
+        "descriptor tables per frame (all threads): {:.0} calls; {:.1} ms entries of tables not made afresh, {:.1} hashing keys,          {:.1} tables found made ({:.0} with nothing to do, {:.0} brought up to date), {:.1} tables made ({:.0});          {:.1} ms making views readable ({:.0} calls, from anywhere)",
+        t[8],
+        t[0] / 1e6,
+        t[1] / 1e6,
+        t[2] / 1e6,
+        t[5],
+        t[6],
+        t[3] / 1e6,
+        t[7],
+        t[4] / 1e6,
+        t[9],
+    );
 }
 
 /// Whether a submission's refreshes of host copies run on several threads,

@@ -109,7 +109,9 @@ if (($small -or $SixCores) -and -not $Classic) {
     # The helper pools are sized for a 24-thread i9 (list translation 8, title bytes under shader writes 6,
     # descriptor records 6, picked views 4, pipeline workers two thirds of the threads). On a 12-thread
     # CPU they share 6 cores with the title's own threads and the preparing thread: fewer of each.
-    $settings.VICTORY_THIN_THREADS = '5'; $settings.VICTORY_UNDER_THREADS = '3'
+    # List translation on 4 threads, not 5: measured twice on the RTX 3060 + 5600X (26/11, rounds 8 and 9):
+    # 14.0 and 14.3 fps against 13.7 and 13.4, 1% low 8.7 and 9.8 against 8.1 and 4.4.
+    $settings.VICTORY_THIN_THREADS = '4'; $settings.VICTORY_UNDER_THREADS = '3'
     $settings.VICTORY_VIEW_THREADS = '3'; $settings.VICTORY_PIPELINE_WORKERS = '4'
 }
 if (-not $Classic) {
