@@ -23,12 +23,13 @@
 # -Set 19: more helper threads for the submitting thread's work (under 6, refresh 5, records 6; worse: 13.1 against 13.7), and the default
 # -Set 20: the card copies' walk over the touched ones only (default now), and over all of them (VICTORY_CARD_TOUCHED=0)
 # -Set 21: the title's 174 MB constants heap read by the card in place (VICTORY_INPLACE_CONSTANTS=1, fxceless), and the default
+# -Set 22: one short run (use -Minutes 3) saying why the constants heap is not opened, with the in-place census (VICTORY_INPLACE_PROBE=1)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21)][int]$Set = 21,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)][int]$Set = 22,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -183,6 +184,11 @@ $runs = switch ($Set) {
         # cross the bus instead. Look at the picture, characters above all (the skinning passes write it).
         @{ Name = 'constants heap in place'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1' } },
         @{ Name = 'default'; Args = @{}; More = @{} }
+    }
+    22 {
+        # Round 21 opened no region: the 182 MB heap at 0x62e0000 was not taken for one run of a section. One run that
+        # says why (the line "a big buffer below 4 GiB is not one run"), with the census of what could be opened.
+        @{ Name = 'why the constants heap is not opened'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1'; VICTORY_INPLACE_PROBE = '1' } }
     }
 }
 $i = 0

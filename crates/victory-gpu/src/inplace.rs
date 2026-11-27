@@ -326,9 +326,38 @@ static CSTATS: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
 /// Whether `[start, start + len)` opens a region of at least `min` bytes:
 /// below 4 GiB and view memory that is one run of a section.
 fn constants_wanted(start: u64, len: u64, min: u64) -> bool {
-    len >= min.max(1)
-        && start.checked_add(len).is_some_and(|end| end <= LOW)
-        && matches!(cover(start as usize, len as usize), Cover::Run(..))
+    if len < min.max(1) || start.checked_add(len).is_none_or(|end| end > LOW) {
+        return false;
+    }
+    let covered = cover(start as usize, len as usize);
+    if matches!(covered, Cover::Run(..)) {
+        return true;
+    }
+    // Why a big buffer down there is not one run of a section, said a few
+    // times: what the views show of it, and whether it is private memory
+    // committed whole instead (which `place_for` could open).
+    static SAID: AtomicU64 = AtomicU64::new(0);
+    if SAID.fetch_add(1, Ordering::Relaxed) < 8 {
+        let what = match covered {
+            Cover::None => "no view holds its first byte",
+            Cover::Holes => "views hold a part of it only",
+            Cover::Scattered => "views hold all of it, from more than one place",
+            Cover::Run(..) => "one run",
+        };
+        let views = {
+            let v = views();
+            v.views.range(start as usize..(start + len) as usize).count()
+        };
+        tracing::info!(
+            start = format_args!("{start:#x}"),
+            len,
+            what,
+            views,
+            private_whole = private_whole(start as usize, len as usize),
+            "a big buffer below 4 GiB is not one run of a section (VICTORY_INPLACE_CONSTANTS)"
+        );
+    }
+    false
 }
 
 /// The 64 KiB pages `[at, end)` that hold `[start, start + len)`.
