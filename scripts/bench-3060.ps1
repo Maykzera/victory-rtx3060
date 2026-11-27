@@ -18,12 +18,13 @@
 # -Set 14: a submission's batch kept for the next (VICTORY_BATCH_REUSE=1, off by default after it), and a new one each time
 # -Set 15: the title's page mappings on 8 threads (VICTORY_MAP_THREADS=8, VIctory's own default), and on 1 (this fork's)
 # -Set 16: page mappings that ask for what the pages show already left alone (VICTORY_ALIAS_SAME, removed after: none were), and the default
+# -Set 17: buffers only the card uses left on the card (VICTORY_GPU_ONLY, from Victory-NV-Lite; taken out after: no buffer qualified), and the default
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)][int]$Set = 16,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17)][int]$Set = 17,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -137,6 +138,13 @@ $runs = switch ($Set) {
         # instead: those that ask for the page a view shows already are left alone; both runs count them (the
         # line "page mappings of the GPU's").
         @{ Name = 'mappings that change nothing left alone'; Args = @{}; More = @{ VICTORY_ALIAS_SAME = '1' } },
+        @{ Name = 'default'; Args = @{}; More = @{} }
+    }
+    17 {
+        # From s2nrzc4f9d/Victory-NV-Lite (VICTORY_GPU_ONLY_BUFFERS): committed default-heap buffers the title's CPU
+        # is not seen at are copied whole once, then not refreshed, compared or copied back. Its README: full buffer
+        # copies 42.5 -> 0.2 MB a frame. Look at the picture too: a CPU write it misses would show.
+        @{ Name = 'buffers only the card uses left on the card'; Args = @{}; More = @{ VICTORY_GPU_ONLY = '1' } },
         @{ Name = 'default'; Args = @{}; More = @{} }
     }
 }
