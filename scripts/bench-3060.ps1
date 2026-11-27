@@ -24,12 +24,14 @@
 # -Set 20: the card copies' walk over the touched ones only (default now), and over all of them (VICTORY_CARD_TOUCHED=0)
 # -Set 21: the title's 174 MB constants heap read by the card in place (VICTORY_INPLACE_CONSTANTS=1, fxceless), and the default
 # -Set 22: one short run (use -Minutes 3) saying why the constants heap is not opened, with the in-place census (VICTORY_INPLACE_PROBE=1)
+# -Set 23: the constants heap in place with its pages in order (VICTORY_INPLACE_CONSTANTS=1, VICTORY_PORT_CONSTANTS=1), and the default
+# -Set 24: set 23 again with the card's fills reading the heap in place (round 23 waited ~30-40 ms a frame for them)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)][int]$Set = 22,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)][int]$Set = 24,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -191,6 +193,20 @@ $runs = switch ($Set) {
         # Its answer: the heap is 3 views from more than one place (the title maps its pieces out of address order).
         # With VICTORY_PORT_CONSTANTS=1 xmem gives the 32-bit heap's fresh pages their slices in address order.
         @{ Name = 'constants heap, pages in order'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1'; VICTORY_PORT_CONSTANTS = '1'; VICTORY_INPLACE_PROBE = '1' } }
+    }
+    23 {
+        # Run 22 (3 minutes, with the census): the heap opened in place, 174 MB, and for a minute of the world the frame
+        # was 44-50 ms (20-23 fps) with 26-31 ms preparing, then ~10 fps at the end (the census at 150 s?). Six minutes
+        # each, without the census. Look at the picture in the first run, characters above all.
+        @{ Name = 'constants heap in place, pages in order'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1'; VICTORY_PORT_CONSTANTS = '1' } },
+        @{ Name = 'default'; Args = @{}; More = @{} }
+    }
+    24 {
+        # Round 23: 20-23 fps for ~1.5 minutes, then ~2 settles a frame (30-40 ms) for fills of constants out of the
+        # heap: "not done on the card: no host copy holds all of it". The card's steps now take title memory in place
+        # as a source with the switch. Same pair again (the default run of round 23 ended at once: window focus).
+        @{ Name = 'constants heap in place, fills on the card'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1'; VICTORY_PORT_CONSTANTS = '1' } },
+        @{ Name = 'default'; Args = @{}; More = @{} }
     }
 }
 $i = 0
