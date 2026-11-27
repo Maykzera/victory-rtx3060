@@ -179,13 +179,15 @@ static OPS: [[AtomicU64; 2]; 64] = [const { [AtomicU64::new(0), AtomicU64::new(0
 
 /// Adds its lifetime to `OPS[.0]` when dropped.
 #[cfg(feature = "diagnostics")]
-struct OpTime(usize, std::time::Instant);
+struct OpTime(Option<(usize, std::time::Instant)>);
 
 #[cfg(feature = "diagnostics")]
 impl Drop for OpTime {
     fn drop(&mut self) {
-        if let Some([ns, n]) = OPS.get(self.0) {
-            ns.fetch_add(self.1.elapsed().as_nanos() as u64, Relaxed);
+        if let Some((op, began)) = self.0
+            && let Some([ns, n]) = OPS.get(op)
+        {
+            ns.fetch_add(began.elapsed().as_nanos() as u64, Relaxed);
             n.fetch_add(1, Relaxed);
         }
     }
@@ -400,7 +402,7 @@ pub(crate) fn line(frames: f64) {
         s[3]
     );
     #[cfg(feature = "diagnostics")]
-    {
+    if crate::draw::fine_timers() {
         let mut ops: Vec<(usize, f64, f64)> = OPS
             .iter()
             .enumerate()
@@ -761,7 +763,7 @@ fn translate(list: This, stream: &[u64], left: impl Fn() -> bool) -> (u64, bool)
             continue;
         }
         #[cfg(feature = "diagnostics")]
-        let _timed = OpTime(op as usize, std::time::Instant::now());
+        let _timed = OpTime(crate::draw::fine_timers().then(|| (op as usize, std::time::Instant::now())));
         if run_plain(op, list, w) {
             continue;
         }

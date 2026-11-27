@@ -510,16 +510,28 @@ pub(crate) static BIND_SPLIT: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
 #[cfg(feature = "diagnostics")]
 pub(crate) static TABLE_SPLIT: [AtomicU64; 24] = [const { AtomicU64::new(0) }; 24];
 
-/// Adds its lifetime's nanoseconds to the counter when dropped (diagnostics).
+/// Whether the fine timers and counters of binding, the tables, the texture
+/// side and the list calls run (`VICTORY_TIMERS=1`, diagnostics builds). Off
+/// by default: a profile of 27/11 found the clock reads alone at ~23 % of the
+/// list threads' work.
 #[cfg(feature = "diagnostics")]
-pub(crate) struct Timed(&'static AtomicU64, std::time::Instant);
+#[inline]
+pub(crate) fn fine_timers() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("VICTORY_TIMERS").is_ok_and(|v| v == "1"))
+}
+
+/// Adds its lifetime's nanoseconds to the counter when dropped (diagnostics,
+/// [`fine_timers`]).
+#[cfg(feature = "diagnostics")]
+pub(crate) struct Timed(Option<(&'static AtomicU64, std::time::Instant)>);
 #[cfg(not(feature = "diagnostics"))]
 pub(crate) struct Timed;
 
 #[cfg(feature = "diagnostics")]
 #[inline]
 pub(crate) fn timed(i: usize) -> Timed {
-    Timed(&TABLE_SPLIT[i], std::time::Instant::now())
+    Timed(fine_timers().then(|| (&TABLE_SPLIT[i], std::time::Instant::now())))
 }
 #[cfg(not(feature = "diagnostics"))]
 #[inline]
@@ -530,7 +542,9 @@ pub(crate) fn timed(_i: usize) -> Timed {
 #[cfg(feature = "diagnostics")]
 impl Drop for Timed {
     fn drop(&mut self) {
-        self.0.fetch_add(self.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        if let Some((counter, began)) = self.0 {
+            counter.fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
     }
 }
 
@@ -538,13 +552,15 @@ impl Drop for Timed {
 #[inline]
 pub(crate) fn table_count(_i: usize) {
     #[cfg(feature = "diagnostics")]
-    TABLE_SPLIT[_i].fetch_add(1, Ordering::Relaxed);
+    if fine_timers() {
+        TABLE_SPLIT[_i].fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 /// Adds its lifetime's nanoseconds to `BIND_SPLIT[i]` when dropped
 /// (diagnostics; nothing otherwise).
 #[cfg(feature = "diagnostics")]
-struct BindTime(usize, std::time::Instant);
+struct BindTime(Option<(usize, std::time::Instant)>);
 #[cfg(not(feature = "diagnostics"))]
 struct BindTime;
 
@@ -552,7 +568,7 @@ impl BindTime {
     #[cfg(feature = "diagnostics")]
     #[inline]
     fn start(i: usize) -> Self {
-        BindTime(i, std::time::Instant::now())
+        BindTime(fine_timers().then(|| (i, std::time::Instant::now())))
     }
     #[cfg(not(feature = "diagnostics"))]
     #[inline]
@@ -564,7 +580,9 @@ impl BindTime {
 #[cfg(feature = "diagnostics")]
 impl Drop for BindTime {
     fn drop(&mut self) {
-        BIND_SPLIT[self.0].fetch_add(self.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        if let Some((i, began)) = self.0 {
+            BIND_SPLIT[i].fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
     }
 }
 /// Of the texture side ([`State::heap_textures`]), nanoseconds since the last
@@ -579,7 +597,7 @@ pub(crate) static TEXTURE_SPLIT: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 
 /// Adds its lifetime's nanoseconds to `TEXTURE_SPLIT[.0]` when dropped
 /// (diagnostics; nothing otherwise).
 #[cfg(feature = "diagnostics")]
-struct TexTime((usize, std::time::Instant));
+struct TexTime(Option<(usize, std::time::Instant)>);
 #[cfg(not(feature = "diagnostics"))]
 struct TexTime;
 
@@ -587,7 +605,7 @@ impl TexTime {
     #[cfg(feature = "diagnostics")]
     #[inline]
     fn start(i: usize) -> Self {
-        TexTime((i, std::time::Instant::now()))
+        TexTime(fine_timers().then(|| (i, std::time::Instant::now())))
     }
     #[cfg(not(feature = "diagnostics"))]
     #[inline]
@@ -599,7 +617,9 @@ impl TexTime {
 #[cfg(feature = "diagnostics")]
 impl Drop for TexTime {
     fn drop(&mut self) {
-        TEXTURE_SPLIT[self.0.0].fetch_add(self.0.1.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        if let Some((i, began)) = self.0 {
+            TEXTURE_SPLIT[i].fetch_add(began.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
     }
 }
 

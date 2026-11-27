@@ -7543,6 +7543,10 @@ fn split_line(frames: f64) {
         h[2],
         aside::WAITED.swap(0, Ordering::Relaxed) as f64 / 1e3 / frames,
     );
+    // (The fine timers below: VICTORY_TIMERS=1.)
+    if !crate::draw::fine_timers() {
+        return;
+    }
     let t: Vec<f64> = crate::draw::TEXTURE_SPLIT.iter().map(|n| n.swap(0, Ordering::Relaxed) as f64 / frames).collect();
     tracing::info!(
         "the texture side per frame: {:.1} ms finding what is due, {:.1} looking again at uploaded slots ({:.0} looks), \

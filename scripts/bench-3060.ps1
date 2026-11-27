@@ -14,12 +14,13 @@
 # -Set 10: the default (4 list threads now) with timers inside the descriptor tables, twice
 # -Set 11: timers inside the tables made, and the same with the slots' old resources let go in batches
 # -Set 12: a made table's descriptors copied in one call (VICTORY_TABLE_COPIES), and the default
+# -Set 13: the default (fine timers off now), and with the fine timers on (VICTORY_TIMERS=1)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)][int]$Set = 12,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)][int]$Set = 13,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -107,6 +108,12 @@ $runs = switch ($Set) {
         # keeping is 10-13 ms). Those copies made in one CopyDescriptors a table, then the default.
         @{ Name = 'one copy call a table'; Args = @{}; More = @{ VICTORY_TABLE_COPIES = '1' } },
         @{ Name = 'default'; Args = @{}; More = @{} }
+    }
+    13 {
+        # Profile of 27/11 (scripts/profile-3060.ps1): reading the clock for the fine timers of rounds 7-12 was
+        # ~23 % of the list threads' work. They are off by default now; the same with them on, for the price.
+        @{ Name = 'default, fine timers off'; Args = @{}; More = @{} },
+        @{ Name = 'fine timers on'; Args = @{}; More = @{ VICTORY_TIMERS = '1' } }
     }
 }
 $i = 0
