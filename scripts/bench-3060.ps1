@@ -20,7 +20,7 @@
 # -Set 16: page mappings that ask for what the pages show already left alone (VICTORY_ALIAS_SAME, removed after: none were), and the default
 # -Set 17: buffers only the card uses left on the card (VICTORY_GPU_ONLY, from Victory-NV-Lite; taken out after: no buffer qualified), and the default
 # -Set 18: the title one frame further ahead of the submitting thread (VICTORY_SUBMIT_FRAMES=2, the default after it), and 1
-# -Set 19: more helper threads for the submitting thread's work (under 6, refresh 5, records 6), and the default
+# -Set 19: more helper threads for the submitting thread's work (under 6, refresh 5, records 6; worse: 13.1 against 13.7), and the default
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(

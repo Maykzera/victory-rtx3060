@@ -1217,7 +1217,11 @@ pub fn map_alias(to: u64, from: u64, len: u64) -> bool {
 /// The title's busiest thread spent a third of its time in these mappings
 /// (profile of 27/11), each an unmap and a map through a lock of the
 /// kernel's; round 16 found none of them asking for what a page showed.
-static ALIAS_STATS: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
+/// Then, of the ranges of a batch ([`map_aliases`]): those right after the
+/// one before them in the tiled heap, and of those, the ones whose first page
+/// is the section page after the last one the range before shows (what one
+/// view could show with it).
+static ALIAS_STATS: [AtomicU64; 5] = [const { AtomicU64::new(0) }; 5];
 
 /// Counts a [`map_alias`] call of `pages` pages, `same` of them as asked
 /// already, and says the counts every ten seconds or so.
@@ -1235,10 +1239,12 @@ fn alias_count(pages: usize, same: usize) {
             *said = Some(now);
             let n: Vec<u64> = ALIAS_STATS.iter().map(|c| c.swap(0, Ordering::Relaxed)).collect();
             tracing::info!(
-                "page mappings of the GPU's (CopyPageMappings), per second: {:.0} calls, {:.0} pages, {:.0} of them showing                  what was asked already",
+                "page mappings of the GPU's (CopyPageMappings), per second: {:.0} calls, {:.0} pages, {:.0} of them showing                  what was asked already; {:.0} ranges right after the one before them, {:.0} of them going on with its                  section's pages",
                 n[0] as f64 / secs,
                 n[1] as f64 / secs,
                 n[2] as f64 / secs,
+                n[3] as f64 / secs,
+                n[4] as f64 / secs,
             );
         }
         Some(_) => {}
@@ -1249,6 +1255,29 @@ fn alias_count(pages: usize, same: usize) {
 pub fn map_aliases(ranges: &[(u64, u64, u64)]) -> bool {
     let _costed = Costed::begin(None);
     lift_thread();
+    // How many ranges go on where the one before them ends, in the heap and
+    // in the section ([`ALIAS_STATS`]): whether joining them would make runs.
+    if ranges.len() > 1 {
+        let physical = physical();
+        let (mut after, mut going_on) = (0u64, 0u64);
+        for pair in ranges.windows(2) {
+            let ((to, from, len), (next_to, next_from, _)) = (pair[0], pair[1]);
+            if len == 0 || from == 0 || next_from == 0 || to + len != next_to {
+                continue;
+            }
+            after += 1;
+            let last = physical.slice_at((from + len) as usize - PAGE);
+            let first = physical.slice_at(next_from as usize);
+            if let (Some(a), Some(b)) = (last, first)
+                && Arc::ptr_eq(&a.section, &b.section)
+                && a.index + 1 == b.index
+            {
+                going_on += 1;
+            }
+        }
+        ALIAS_STATS[3].fetch_add(after, Ordering::Relaxed);
+        ALIAS_STATS[4].fetch_add(going_on, Ordering::Relaxed);
+    }
     if side_by_side() <= 1 {
         return ranges.iter().all(|&(to, from, len)| map_alias(to, from, len));
     }
