@@ -97,6 +97,12 @@ if ($Resolution) {
         Write-Host "Series $console outputs ${outHeight}p: ${Resolution}p is above it."
         return
     }
+    # Render scale 1.0 on Series S stops the title at a breakpoint seconds after it starts (README, known
+    # problems; again on the RTX 3060 on 27/11). Series X renders 1080p at its default half scale.
+    if (-not $SeriesX -and [int]$Resolution -ge $outHeight) {
+        Write-Host "Series S at ${Resolution}p (render scale 1.0) stops the game at start. For 1080p use -SeriesX (it renders 1080p by default), or 720 on Series S."
+        return
+    }
     $settings.VICTORY_RENDER_SCALE = ([int]$Resolution / $outHeight).ToString('0.####', [Globalization.CultureInfo]::InvariantCulture)
 }
 if ($Adapter) { $settings.VICTORY_ADAPTER = $Adapter }
