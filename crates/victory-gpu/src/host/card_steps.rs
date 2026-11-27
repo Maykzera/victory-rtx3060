@@ -413,10 +413,13 @@ fn holder(writers: &[Writer], from: usize, to: usize) -> Result<Arc<Shadow>, &'s
 /// What the steps of `runs` do, and which step each is (its list by address,
 /// its place in it). `written`: what flights may write.
 fn does_of(written: &[(usize, usize)], runs: &[&HostList]) -> (Vec<Does>, Vec<(usize, usize)>) {
-    let mut does = Vec::new();
+    // (Room for all at once: thousands of steps a submission, grown one
+    // doubling at a time otherwise.)
+    let n: usize = runs.iter().map(|list| list.deferred().copies.len()).sum();
+    let mut does = Vec::with_capacity(n);
     // Which step each is. One list's lock at a time: a submission may
     // name a list twice.
-    let mut steps = Vec::new();
+    let mut steps = Vec::with_capacity(n);
     for list in runs {
         for (i, step) in list.deferred().copies.iter().enumerate() {
             does.push(match step {

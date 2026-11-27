@@ -15,12 +15,13 @@
 # -Set 11: timers inside the tables made, and the same with the slots' old resources let go in batches
 # -Set 12: a made table's descriptors copied in one call (VICTORY_TABLE_COPIES), and the default
 # -Set 13: the default (fine timers off now), and with the fine timers on (VICTORY_TIMERS=1)
+# -Set 14: a submission's batch kept for the next (VICTORY_BATCH_REUSE=1, off by default after it), and a new one each time
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)][int]$Set = 13,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)][int]$Set = 14,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -114,6 +115,13 @@ $runs = switch ($Set) {
         # ~23 % of the list threads' work. They are off by default now; the same with them on, for the price.
         @{ Name = 'default, fine timers off'; Args = @{}; More = @{} },
         @{ Name = 'fine timers on'; Args = @{}; More = @{ VICTORY_TIMERS = '1' } }
+    }
+    14 {
+        # Round 13: the submitting thread holds the frame; ~14 % of it was vectors growing each submission.
+        # The submission's batch (refreshes, their index, fills, placed copies) kept with its room for the next,
+        # and the card steps' lists made at their size; then a new batch each time, as before.
+        @{ Name = 'batch kept for the next submission'; Args = @{}; More = @{ VICTORY_BATCH_REUSE = '1' } },
+        @{ Name = 'a new batch each time'; Args = @{}; More = @{} }
     }
 }
 $i = 0

@@ -5574,7 +5574,7 @@ impl Host {
         let mut lists: Vec<Option<ID3D12CommandList>> = Vec::with_capacity(2 * runs.len());
         // Where each run's lists start in `lists`.
         let mut firsts = Vec::with_capacity(runs.len());
-        let mut batch = Batch::default();
+        let mut batch = Batch::reused();
         #[cfg(feature = "diagnostics")]
         let split = Split::begin();
         // The time a settle of flights takes inside this preparing: the
@@ -7908,7 +7908,60 @@ fn wide_textures() -> bool {
     *ON.get_or_init(|| std::env::var_os("VICTORY_WIDE_TEXTURES").is_none_or(|v| v != "0") && wide_refresh())
 }
 
+thread_local! {
+    /// The last submission's [`Batch`], emptied, for the next one on this
+    /// thread ([`Batch::reused`]).
+    static SPARE_BATCH: std::cell::RefCell<Option<Batch>> = const { std::cell::RefCell::new(None) };
+}
+
+/// A [`Batch`] that goes back, emptied, to [`SPARE_BATCH`] when dropped.
+struct ReusedBatch(Option<Batch>);
+
+impl std::ops::Deref for ReusedBatch {
+    type Target = Batch;
+    fn deref(&self) -> &Batch {
+        self.0.as_ref().expect("a batch until dropped")
+    }
+}
+
+impl std::ops::DerefMut for ReusedBatch {
+    fn deref_mut(&mut self) -> &mut Batch {
+        self.0.as_mut().expect("a batch until dropped")
+    }
+}
+
+impl Drop for ReusedBatch {
+    fn drop(&mut self) {
+        let Some(mut batch) = self.0.take() else { return };
+        batch.refreshes.clear();
+        batch.index.clear();
+        batch.textures.clear();
+        batch.due.clear();
+        batch.placed.clear();
+        batch.fills.clear();
+        batch.ahead.clear();
+        batch.front = false;
+        let _ = SPARE_BATCH.try_with(|spare| *spare.borrow_mut() = Some(batch));
+    }
+}
+
+/// Whether a submission's [`Batch`] keeps the room the last one's grew to
+/// (`VICTORY_BATCH_REUSE=1`; a new one each time otherwise). A profile of
+/// 27/11 found ~14 % of the submitting thread growing vectors; round 14
+/// measured no gain (13.5 fps with, 14.4 without, within the runs' spread).
+fn batch_reuse() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("VICTORY_BATCH_REUSE").is_ok_and(|v| v == "1"))
+}
+
 impl Batch {
+    /// An empty batch: the one the last submission on this thread left, with
+    /// its room, if there is one ([`batch_reuse`]).
+    fn reused() -> ReusedBatch {
+        let spare = if batch_reuse() { SPARE_BATCH.with(|spare| spare.borrow_mut().take()) } else { None };
+        ReusedBatch(Some(spare.unwrap_or_default()))
+    }
+
     fn add(&mut self, shadow: &std::sync::Arc<crate::shadow::Shadow>, address: usize, len: usize) {
         let end = address + len;
         let key = std::sync::Arc::as_ptr(shadow) as usize;
