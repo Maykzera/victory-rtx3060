@@ -2766,6 +2766,28 @@ static LATE_STATS: [std::sync::atomic::AtomicU64; 18] = [const { std::sync::atom
 /// card, by why they settled (the `WHY_` places).
 static LATE_WAITED: [std::sync::atomic::AtomicU64; 11] = [const { std::sync::atomic::AtomicU64::new(0) }; 11];
 
+/// For the line's counts of parts not joined (`crate::queue::behind`): what
+/// may write the place of a memory value wait not met when the part behind
+/// it came. 0: flights in the air (shaders, or a bottom-of-pipe write that is
+/// not the value); 1: the lists of the submission it would join (their
+/// declared writes or bottom-of-pipe writes); 2: nothing of ours in the air
+/// (the title's CPU, or a submission still to come, of this queue or
+/// another).
+pub(crate) fn value_wait_writer(wait: &crate::list::ValueWait, ahead: &[&HostList]) -> usize {
+    let (address, bytes) = wait.place();
+    {
+        let line = line();
+        let in_line = line.line.iter().any(|item| matches!(item, Late::Write(at, _, n) if *at < address + bytes && address < *at + *n));
+        let in_hand = line.in_hand.iter().any(|(at, _, n)| *at < address + bytes && address < *at + *n);
+        if in_line || in_hand || touches(&line.written, address, address + bytes) {
+            return 0;
+        }
+    }
+    let declared = declared_writes(ahead).into_iter().flat_map(|(_, ranges)| ranges).any(|(a, e)| a < address + bytes && address < e);
+    let bottom = ahead.iter().any(|l| l.deferred().writes.iter().any(|&(at, _, n)| at < address + bytes && address < at + n));
+    if declared || bottom { 1 } else { 2 }
+}
+
 /// Whether `[from, to)` touches one of `ranges` (in order, joined).
 fn touches(ranges: &[(usize, usize)], from: usize, to: usize) -> bool {
     if from >= to {
@@ -8041,7 +8063,9 @@ impl Batch {
     fn refresh_front(&mut self, runs: &[&HostList], parts: &[usize]) {
         let mut copies: ByCopy<std::sync::Arc<crate::shadow::Shadow>> = ByCopy::default();
         let mut due = Vec::new();
-        let mut touches = Vec::new();
+        // (Room for every step at once: thousands a submission.)
+        let steps: usize = runs.iter().map(|list| list.deferred().copies.len()).sum();
+        let mut touches = Vec::with_capacity(steps + parts.len());
         for (n, list) in runs.iter().enumerate() {
             if parts.contains(&n) {
                 touches.push(Touch::Part);

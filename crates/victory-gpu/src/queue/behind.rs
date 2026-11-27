@@ -477,6 +477,8 @@ impl Work for Job {
                     || hosts().any(|list| crate::host::will_meet(list, wait));
                 if !met {
                     NOT_JOINED[0].fetch_add(1, Relaxed);
+                    let ahead: Vec<&crate::host::HostList> = hosts().collect();
+                    VALUE_WRITER[crate::host::value_wait_writer(wait, &ahead)].fetch_add(1, Relaxed);
                     return Err(next);
                 }
             }
@@ -629,6 +631,11 @@ const JOINED: usize = 10;
 /// joinable (`crate::host::joinable`: a copy or a step of ours, or it reads
 /// what those before write), a present or other entry.
 static NOT_JOINED: [AtomicU64; 6] = [const { AtomicU64::new(0) }; 6];
+
+/// Of those at a memory value wait not met: what may write its place
+/// ([`crate::host::value_wait_writer`]: flights in the air, the lists it
+/// would join, nothing of ours in the air).
+static VALUE_WRITER: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
 
 /// How many submissions may be in the line when a submit call returns
 /// (`VICTORY_SUBMIT_DEPTH`; 64: about two frames of the title's).
@@ -863,6 +870,13 @@ pub(super) fn line(frames: f64) {
         s[DRAINS] / frames,
         s[FORCED] / frames,
         s[JOINED] / frames
+    );
+    let w: Vec<f64> = VALUE_WRITER.iter().map(|c| c.swap(0, Relaxed) as f64 / frames).collect();
+    tracing::info!(
+        "of the parts at a memory value wait not met, per frame, what may write its place: flights in the air {:.1}, the lists it would join {:.1}, nothing of ours in the air (the title's CPU, or a submission still to come) {:.1}",
+        w[0],
+        w[1],
+        w[2],
     );
     let n: Vec<f64> = NOT_JOINED.iter().map(|c| c.swap(0, Relaxed) as f64 / frames).collect();
     tracing::info!(

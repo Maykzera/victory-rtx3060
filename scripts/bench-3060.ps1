@@ -21,12 +21,13 @@
 # -Set 17: buffers only the card uses left on the card (VICTORY_GPU_ONLY, from Victory-NV-Lite; taken out after: no buffer qualified), and the default
 # -Set 18: the title one frame further ahead of the submitting thread (VICTORY_SUBMIT_FRAMES=2, the default after it), and 1
 # -Set 19: more helper threads for the submitting thread's work (under 6, refresh 5, records 6; worse: 13.1 against 13.7), and the default
+# -Set 20: the card copies' walk over the touched ones only (default now), and over all of them (VICTORY_CARD_TOUCHED=0)
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)][int]$Set = 19,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)][int]$Set = 20,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -164,6 +165,14 @@ $runs = switch ($Set) {
         # records (VIEW 3 -> 6, which also sizes the views pool).
         @{ Name = 'more helpers for the submitting thread'; Args = @{}; More = @{ VICTORY_UNDER_THREADS = '6'; VICTORY_WIDE_THREADS = '5'; VICTORY_VIEW_THREADS = '6' } },
         @{ Name = 'default'; Args = @{}; More = @{} }
+    }
+    20 {
+        # Profile of 27/11 10:55 (the build of round 19): card_dirty's walk over all ~3,900 copies in the card's memory
+        # at every submission was ~5 % of the submitting thread; now only those given something since. Also in this
+        # build, for both runs: the three vectors that grew most are made with room. Both count what may write the
+        # place of the value waits that cut a frame into parts.
+        @{ Name = 'card walk over the touched copies'; Args = @{}; More = @{} },
+        @{ Name = 'card walk over all copies'; Args = @{}; More = @{ VICTORY_CARD_TOUCHED = '0' } }
     }
 }
 $i = 0
