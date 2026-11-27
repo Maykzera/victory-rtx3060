@@ -1182,6 +1182,19 @@ pub fn map_alias(to: u64, from: u64, len: u64) -> bool {
     let _costed = Costed::begin(None);
     let _busy = Busy::begin();
     let mut physical = physical();
+    // Pages `to` shows already, one view each, of the very page `from` shows
+    // (counted: none in round 16, so no call is left alone for it).
+    if from != 0 && len > 0 && len % PAGE == 0 {
+        let same = (0..len).step_by(PAGE).filter(|&k| {
+            physical.views.get(&(to + k)).is_some_and(|(size, shown)| {
+                *size == PAGE
+                    && physical
+                        .slice_at(from + k)
+                        .is_some_and(|wanted| Arc::ptr_eq(&wanted.section, &shown.section) && wanted.index == shown.index)
+            })
+        });
+        alias_count(len / PAGE, same.count());
+    }
     // As in `XMemMapPhysicalPages`: no read in place meets the gap.
     let _changing = victory_gpu::title_memory_remapping();
     unmap(&mut physical, to, len);
@@ -1198,6 +1211,38 @@ pub fn map_alias(to: u64, from: u64, len: u64) -> bool {
         }
     }
     true
+}
+
+/// Of [`map_alias`]: calls, pages, pages already showing what was asked.
+/// The title's busiest thread spent a third of its time in these mappings
+/// (profile of 27/11), each an unmap and a map through a lock of the
+/// kernel's; round 16 found none of them asking for what a page showed.
+static ALIAS_STATS: [AtomicU64; 3] = [const { AtomicU64::new(0) }; 3];
+
+/// Counts a [`map_alias`] call of `pages` pages, `same` of them as asked
+/// already, and says the counts every ten seconds or so.
+fn alias_count(pages: usize, same: usize) {
+    ALIAS_STATS[0].fetch_add(1, Ordering::Relaxed);
+    ALIAS_STATS[1].fetch_add(pages as u64, Ordering::Relaxed);
+    ALIAS_STATS[2].fetch_add(same as u64, Ordering::Relaxed);
+    static SAID: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+    let Ok(mut said) = SAID.try_lock() else { return };
+    let now = std::time::Instant::now();
+    match *said {
+        None => *said = Some(now),
+        Some(at) if now.duration_since(at).as_secs() >= 10 => {
+            let secs = now.duration_since(at).as_secs_f64();
+            *said = Some(now);
+            let n: Vec<u64> = ALIAS_STATS.iter().map(|c| c.swap(0, Ordering::Relaxed)).collect();
+            tracing::info!(
+                "page mappings of the GPU's (CopyPageMappings), per second: {:.0} calls, {:.0} pages, {:.0} of them showing                  what was asked already",
+                n[0] as f64 / secs,
+                n[1] as f64 / secs,
+                n[2] as f64 / secs,
+            );
+        }
+        Some(_) => {}
+    }
 }
 
 /// [`map_alias`] of many ranges, in order.
