@@ -188,7 +188,9 @@ $runs = switch ($Set) {
     22 {
         # Round 21 opened no region: the 182 MB heap at 0x62e0000 was not taken for one run of a section. One run that
         # says why (the line "a big buffer below 4 GiB is not one run"), with the census of what could be opened.
-        @{ Name = 'why the constants heap is not opened'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1'; VICTORY_INPLACE_PROBE = '1' } }
+        # Its answer: the heap is 3 views from more than one place (the title maps its pieces out of address order).
+        # With VICTORY_PORT_CONSTANTS=1 xmem gives the 32-bit heap's fresh pages their slices in address order.
+        @{ Name = 'constants heap, pages in order'; Args = @{}; More = @{ VICTORY_INPLACE_CONSTANTS = '1'; VICTORY_PORT_CONSTANTS = '1'; VICTORY_INPLACE_PROBE = '1' } }
     }
 }
 $i = 0
