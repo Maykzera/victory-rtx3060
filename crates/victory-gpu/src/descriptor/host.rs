@@ -2657,11 +2657,20 @@ impl HostHeap {
     }
 
     /// As [`HostHeap::copy_to`], from the slot `from`, which the card does not
-    /// see.
+    /// see. Between [`gather_copies`] and [`copy_gathered`] it is only
+    /// noted, and made with the others in one call.
     fn copy_from(&self, to: u32, from: D3D12_CPU_DESCRIPTOR_HANDLE) {
         #[cfg(feature = "diagnostics")]
         if let Some(written) = self.written.get(to as usize) {
             written.store(crate::host::coarse_ms() as u32, std::sync::atomic::Ordering::Relaxed);
+        }
+        let _timed = crate::draw::timed(22);
+        if GATHERING.get() {
+            GATHERED.with_borrow_mut(|(dst, src)| {
+                dst.push(self.cpu(to));
+                src.push(from);
+            });
+            return;
         }
         let Some(host) = host() else { return };
         // SAFETY: a slot of our heap, and one of this thread's heap.
@@ -2712,6 +2721,8 @@ impl HostHeap {
         let Some(slot) = self.kept.get(index as usize) else {
             return;
         };
+        let _timed = crate::draw::timed(20);
+        crate::draw::table_count(21);
         let old = {
             use windows::core::Interface;
             let mut slot = slot.lock().unwrap_or_else(|e| e.into_inner());
@@ -2724,7 +2735,8 @@ impl HostHeap {
         // A running submission may still read the old resource through
         // this slot.
         if let Some(old) = old {
-            crate::host::retire_resource(old);
+            crate::draw::table_count(19);
+            crate::host::retire_resource_batched(old);
         }
     }
 
@@ -5849,6 +5861,58 @@ struct ListView {
     twin: bool,
     kept: Kept,
     listed: Listed,
+}
+
+thread_local! {
+    /// Whether [`HostHeap::copy_from`] only notes its copies ([`gather_copies`]).
+    static GATHERING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The copies noted: where to, where from.
+    static GATHERED: std::cell::RefCell<(Vec<D3D12_CPU_DESCRIPTOR_HANDLE>, Vec<D3D12_CPU_DESCRIPTOR_HANDLE>)> =
+        const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
+}
+
+/// Whether the descriptors of a table made afresh are copied in one call
+/// (`VICTORY_TABLE_COPIES=1`; one call a slot otherwise, off by default
+/// while it is measured).
+pub(crate) fn table_copies() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("VICTORY_TABLE_COPIES").is_ok_and(|v| v == "1"))
+}
+
+/// From now on, on this thread, the copies of [`HostHeap::copy_from`] wait
+/// for [`copy_gathered`]. Nothing may read the slots they go to before.
+pub(crate) fn gather_copies() {
+    GATHERING.set(true);
+}
+
+/// Makes the copies gathered since [`gather_copies`], in one call, and
+/// copies at once again after.
+pub(crate) fn copy_gathered() {
+    GATHERING.set(false);
+    let _timed = crate::draw::timed(22);
+    GATHERED.with_borrow_mut(|(dst, src)| {
+        if dst.is_empty() {
+            return;
+        }
+        crate::draw::table_count(23);
+        if let Some(host) = host() {
+            // SAFETY: slots of our heaps and of this thread's, one each: as
+            // many ranges of one on each side, none written twice.
+            unsafe {
+                host.device.CopyDescriptors(
+                    dst.len() as u32,
+                    dst.as_ptr(),
+                    None,
+                    src.len() as u32,
+                    src.as_ptr(),
+                    None,
+                    D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+                );
+            }
+        }
+        dst.clear();
+        src.clear();
+    });
 }
 
 /// The descriptors a thread made for one recording of a list, by the record

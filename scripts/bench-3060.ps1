@@ -12,12 +12,14 @@
 # -Set 8: the default with timers per kind of list call, and the default with 4 list threads (VICTORY_THIN_THREADS)
 # -Set 9: the default with timers inside binding and indirect executions, and 4 list threads again
 # -Set 10: the default (4 list threads now) with timers inside the descriptor tables, twice
+# -Set 11: timers inside the tables made, and the same with the slots' old resources let go in batches
+# -Set 12: a made table's descriptors copied in one call (VICTORY_TABLE_COPIES), and the default
 # -Set 5: the default twice (how much runs differ) and at 432p, with the timers of the big refresh flushes
 # -Keys  the keys and when (seconds after input starts); '' for none
 param(
     [Parameter(Mandatory)][string]$Exe,
     [int]$Minutes = 6,
-    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)][int]$Set = 10,
+    [ValidateSet(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)][int]$Set = 12,
     [string]$Keys = '20:Enter,30:Enter,40:Enter,50:Enter,60:Enter'
 )
 $play = Join-Path $PSScriptRoot 'play-nvidia.ps1'
@@ -91,6 +93,20 @@ $runs = switch ($Set) {
         # setup, for the spread.
         @{ Name = 'default (4 list threads), timers inside the tables'; Args = @{}; More = @{} },
         @{ Name = 'the same again'; Args = @{}; More = @{} }
+    }
+    11 {
+        # Round 10: of the ~120 ms a frame of descriptor tables, 80-89 ms are the ~7,000 tables made afresh
+        # (12 us each). Timers inside them (the line "tables made, inside") and around what slots show; then
+        # the resources slots let go queued 256 at a time instead of one lock each (VICTORY_KEEP_BATCH).
+        @{ Name = 'default, timers inside the tables made'; Args = @{}; More = @{} },
+        @{ Name = 'slots let go in batches'; Args = @{}; More = @{ VICTORY_KEEP_BATCH = '1' } }
+    }
+    12 {
+        # Round 11: the tables made afresh fill ~52,000 slots a frame, ~42,000 of them copied from views the
+        # thread made before, one CopyDescriptorsSimple each; the batches of round 11 changed nothing (the
+        # keeping is 10-13 ms). Those copies made in one CopyDescriptors a table, then the default.
+        @{ Name = 'one copy call a table'; Args = @{}; More = @{ VICTORY_TABLE_COPIES = '1' } },
+        @{ Name = 'default'; Args = @{}; More = @{} }
     }
 }
 $i = 0

@@ -487,6 +487,33 @@ fn bury_lag() -> u64 {
     *LAG.get_or_init(|| std::env::var("VICTORY_BURY_LAG").ok().and_then(|v| v.parse().ok()).unwrap_or(64))
 }
 
+/// [`retire_resource`] for what descriptor slots showed, gathered on each
+/// thread and queued 256 at a time (`VICTORY_KEEP_BATCH=1`; off by
+/// default while it is measured). Each batch is numbered when it is queued:
+/// never earlier than each of its objects would have been, so they are
+/// dropped as late or later. What a thread holds when it ends is dropped.
+pub(crate) fn retire_resource_batched(object: ID3D12Resource) {
+    static ON: OnceLock<bool> = OnceLock::new();
+    if !*ON.get_or_init(|| std::env::var("VICTORY_KEEP_BATCH").is_ok_and(|v| v == "1")) {
+        retire_resource(object);
+        return;
+    }
+    thread_local! {
+        static HELD: std::cell::RefCell<Vec<ID3D12Resource>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    HELD.with(|held| {
+        let mut held = held.borrow_mut();
+        held.push(object);
+        if held.len() < 256 {
+            return;
+        }
+        let started = STARTED.load(Ordering::Acquire) + crate::queue::queued();
+        RETIREMENTS[1].fetch_add(held.len() as u64, Ordering::Relaxed);
+        let mut retired = RETIRED.lock().unwrap_or_else(|e| e.into_inner());
+        retired.extend(held.drain(..).map(|o| (started, Retired::Resource(o))));
+    });
+}
+
 /// Drops what waited for submissions up to `finished` ([`bury_lag`]). The
 /// numbers come in order, but for threads that overtake each other: one of
 /// those is dropped a little later than it could be.
@@ -7556,6 +7583,26 @@ fn split_line(frames: f64) {
         t[7],
         t[4] / 1e6,
         t[9],
+    );
+    tracing::info!(
+        "tables made, inside (all threads): {:.0} slots; {:.1} ms marking the title's slots, {:.1} ms the slots in all: {:.1} after a listed view ({:.0} slots), {:.1} constant buffers ({:.0}), {:.1} views made ({:.0})",
+        t[11],
+        t[10] / 1e6,
+        t[13] / 1e6,
+        t[12] / 1e6,
+        t[14],
+        t[15] / 1e6,
+        t[17],
+        t[16] / 1e6,
+        t[18],
+    );
+    tracing::info!(
+        "descriptor slots given another resource (all threads): {:.0} a frame, {:.1} ms keeping what slots show ({:.0} calls); {:.1} ms copying listed views' descriptors ({:.0} tables copied in one call)",
+        t[19],
+        t[20] / 1e6,
+        t[21],
+        t[22] / 1e6,
+        t[23],
     );
 }
 

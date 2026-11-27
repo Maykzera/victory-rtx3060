@@ -508,22 +508,22 @@ pub(crate) static BIND_SPLIT: [AtomicU64; 8] = [const { AtomicU64::new(0) }; 8];
 /// tables found made and brought up to date, tables made, calls of `tables`,
 /// calls of `readable` (diagnostics).
 #[cfg(feature = "diagnostics")]
-pub(crate) static TABLE_SPLIT: [AtomicU64; 10] = [const { AtomicU64::new(0) }; 10];
+pub(crate) static TABLE_SPLIT: [AtomicU64; 24] = [const { AtomicU64::new(0) }; 24];
 
 /// Adds its lifetime's nanoseconds to the counter when dropped (diagnostics).
 #[cfg(feature = "diagnostics")]
-struct Timed(&'static AtomicU64, std::time::Instant);
+pub(crate) struct Timed(&'static AtomicU64, std::time::Instant);
 #[cfg(not(feature = "diagnostics"))]
-struct Timed;
+pub(crate) struct Timed;
 
 #[cfg(feature = "diagnostics")]
 #[inline]
-fn timed(i: usize) -> Timed {
+pub(crate) fn timed(i: usize) -> Timed {
     Timed(&TABLE_SPLIT[i], std::time::Instant::now())
 }
 #[cfg(not(feature = "diagnostics"))]
 #[inline]
-fn timed(_i: usize) -> Timed {
+pub(crate) fn timed(_i: usize) -> Timed {
     Timed
 }
 
@@ -536,7 +536,7 @@ impl Drop for Timed {
 
 /// Counts one in `TABLE_SPLIT[i]` (diagnostics).
 #[inline]
-fn table_count(_i: usize) {
+pub(crate) fn table_count(_i: usize) {
     #[cfg(feature = "diagnostics")]
     TABLE_SPLIT[_i].fetch_add(1, Ordering::Relaxed);
 }
@@ -3546,11 +3546,13 @@ impl State {
             // They are such a table's, whatever they hold. (Of a big one,
             // which may lie over slots shaders pick by index, only the ones
             // the shader names.)
+            let tabling = timed(10);
             if let Some(title) = title_first {
                 for k in (0..n).filter(|&k| n <= 64 || entries().any(|u| u.table_offset_dwords / 8 == k)) {
                     host.slot_tabled(title + k);
                 }
             }
+            drop(tabling);
             let list_views = crate::descriptor::host::list_views();
             if self.recording == 0 {
                 static NEXT: AtomicU64 = AtomicU64::new(1);
@@ -3559,14 +3561,22 @@ impl State {
             let recording = self.recording;
             // The whole range: a shader may index past the entries its
             // used-resource list names (descriptor arrays).
+            let _slots = timed(13);
+            let gathering = list_views && crate::descriptor::host::table_copies();
+            if gathering {
+                crate::descriptor::host::gather_copies();
+            }
             for k in 0..n {
                 let index = first + k;
+                table_count(11);
                 // A view this list has made before: its descriptor copied,
                 // and nothing more if nothing changed in the list since.
                 if list_views
                     && let Some(words) = crate::descriptor::record_at(table + u64::from(k) * 32)
                     && let Some(mut listed) = host.make_listed(recording, words, index)
                 {
+                    let _listed = timed(12);
+                    table_count(14);
                     let kind = entries()
                         .find(|u| u.table_offset_dwords / 8 == k)
                         .map(|u| u.kind)
@@ -3606,6 +3616,8 @@ impl State {
                 let used = entries().find(|u| u.table_offset_dwords / 8 == k);
                 match crate::descriptor::view(table + u64::from(k) * 32) {
                     Some(View::Constant(address, size)) => {
+                        let _constant = timed(15);
+                        table_count(17);
                         let Some((buffer, gpu, to)) = list.scratch_held(u64::from(size)) else {
                             host.make_null(index);
                             continue;
@@ -3615,6 +3627,8 @@ impl State {
                         host.constant_at(index, &buffer, gpu, size);
                     }
                     Some(view) => {
+                        let _view = timed(16);
+                        table_count(18);
                         match halved(self, slot, k * 8) {
                             Some(shown) => host.make_at(index, &shown),
                             None => host.make_at(index, &view),
@@ -3646,6 +3660,9 @@ impl State {
                         }
                     }
                 }
+            }
+            if gathering {
+                crate::descriptor::host::copy_gathered();
             }
             made.push((slot, first * 32));
         }
